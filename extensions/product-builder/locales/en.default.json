@@ -1,0 +1,15 @@
+{
+  "product_builder": {
+    "title": "Build Your Kit",
+    "fuel_system": "Fuel System",
+    "fuel_test": "Fuel Test",
+    "fuel_test_2": "Fuel Test 2",
+    "fuel_test_2_missing": "Fuel Test 2 product could not be resolved.",
+    "base_price": "Base Price",
+    "selected_options": "Selected Options",
+    "configuration_total": "Configuration Total",
+    "bundle_discount": "Bundle Discount 5%",
+    "final_total": "Final Total",
+    "add_master_kit": "Add Master Kit"
+  }
+}

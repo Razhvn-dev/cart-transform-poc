@@ -1,0 +1,26 @@
+query RunInput {
+  cart {
+    lines {
+      id
+      quantity
+      builderEfiVariantId: attribute(key: "_builder_efi_variant_id") {
+        value
+      }
+      builderFuelVariantId: attribute(key: "_builder_fuel_variant_id") {
+        value
+      }
+      builderIgnitionVariantId: attribute(key: "_builder_ignition_variant_id") {
+        value
+      }
+      builderDisplayVariantId: attribute(key: "_builder_display_variant_id") {
+        value
+      }
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          id
+        }
+      }
+    }
+  }
+}

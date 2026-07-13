@@ -1,0 +1,723 @@
+{% doc %}
+Renders the POC product builder for the Master Kit product page.
+@example
+{% content_for 'block', type: 'product-builder', id: 'product-builder' %}
+{% enddoc %}
+
+{% liquid
+  assign fallback_master_variant_id = '51505325605142'
+  assign fuel_variant_gid = 'gid://shopify/ProductVariant/51505348346134'
+  assign fuel_test_2_variant_gid = 'gid://shopify/ProductVariant/51518319591702'
+
+  assign master_product = block.settings.master_product
+  if master_product == blank
+    assign master_product = product
+  endif
+  if master_product == blank
+    assign master_product = all_products['master-kit-test']
+  endif
+
+  assign fuel_product = all_products['fuel-test']
+  assign fuel_test_2_product = all_products['fuel-test-2']
+  assign efi_fusion_lite_product = all_products['killshot-fusion-lite-efi-system']
+  assign efi_killshot_2_pro_product = all_products['aces-efi-killshot-tbi-system']
+  assign ignition_black_jack_product = all_products['black-jack-pro-series-ignition-coil']
+  assign ignition_high_roller_product = all_products['high-roller-cdi-ignition-box']
+  assign display_5_hd_product = all_products['5-pro-handheld']
+  assign display_8_hd_product = all_products['8-handheld']
+
+  assign master_variant = master_product.selected_or_first_available_variant
+  assign fuel_variant = fuel_product.selected_or_first_available_variant
+  assign fuel_test_2_variant = fuel_test_2_product.selected_or_first_available_variant
+  assign efi_fusion_lite_variant = efi_fusion_lite_product.selected_or_first_available_variant
+  assign efi_killshot_2_pro_variant = efi_killshot_2_pro_product.selected_or_first_available_variant
+  assign ignition_black_jack_variant = ignition_black_jack_product.selected_or_first_available_variant
+  assign ignition_high_roller_variant = ignition_high_roller_product.selected_or_first_available_variant
+  assign display_5_hd_variant = display_5_hd_product.selected_or_first_available_variant
+  assign display_8_hd_variant = display_8_hd_product.selected_or_first_available_variant
+
+  assign fuel_main_image = fuel_product | image_url: width: 480
+  assign fuel_test_2_main_image = fuel_test_2_product | image_url: width: 480
+  assign efi_fusion_lite_main_image = efi_fusion_lite_product | image_url: width: 480
+  assign efi_killshot_2_pro_main_image = efi_killshot_2_pro_product | image_url: width: 480
+  assign ignition_black_jack_main_image = ignition_black_jack_product | image_url: width: 480
+  assign ignition_high_roller_main_image = ignition_high_roller_product | image_url: width: 480
+  assign display_5_hd_main_image = display_5_hd_product | image_url: width: 480
+  assign display_8_hd_main_image = display_8_hd_product | image_url: width: 480
+
+  assign master_variant_id = fallback_master_variant_id
+  if master_variant.id != blank
+    assign master_variant_id = master_variant.id
+  endif
+
+  assign fuel_price_cents = fuel_variant.price | default: 0
+  assign fuel_test_2_price_cents = fuel_test_2_variant.price | default: 0
+  assign fuel_adjustment_cents = fuel_price_cents
+  assign fuel_test_2_adjustment_cents = fuel_test_2_price_cents
+  assign efi_fusion_lite_price_cents = efi_fusion_lite_variant.price | default: 0
+  assign efi_killshot_2_pro_price_cents = efi_killshot_2_pro_variant.price | default: 0
+  assign ignition_black_jack_price_cents = ignition_black_jack_variant.price | default: 0
+  assign ignition_high_roller_price_cents = ignition_high_roller_variant.price | default: 0
+  assign display_5_hd_price_cents = display_5_hd_variant.price | default: 0
+  assign display_8_hd_price_cents = display_8_hd_variant.price | default: 0
+  assign bundle_discount_basis_points = 500
+  assign builder_base_price_cents = 0
+  assign default_configuration_total_cents = efi_fusion_lite_price_cents | plus: fuel_adjustment_cents | plus: ignition_black_jack_price_cents
+  assign default_bundle_discount_cents = default_configuration_total_cents | times: bundle_discount_basis_points | plus: 5000 | divided_by: 10000
+  assign default_final_total_cents = default_configuration_total_cents | minus: default_bundle_discount_cents
+%}
+
+{% comment %}
+  Build gallery image URL arrays using recommended image_url filter.
+  image_url is applied to image objects (not url strings) with width parameter.
+{% endcomment %}
+{% capture fuel_gallery_json %}[
+  {%- for image in fuel_product.images -%}
+    {%- unless forloop.first -%},{%- endunless -%}
+    "{{ image | image_url: width: 480 }}"
+  {%- endfor -%}
+]{% endcapture %}
+
+{% capture fuel_test_2_gallery_json %}[
+  {%- for image in fuel_test_2_product.images -%}
+    {%- unless forloop.first -%},{%- endunless -%}
+    "{{ image | image_url: width: 480 }}"
+  {%- endfor -%}
+]{% endcapture %}
+
+{% capture efi_fusion_lite_gallery_json %}[
+  {%- for image in efi_fusion_lite_product.images -%}
+    {%- unless forloop.first -%},{%- endunless -%}
+    "{{ image | image_url: width: 480 }}"
+  {%- endfor -%}
+]{% endcapture %}
+
+{% capture efi_killshot_2_pro_gallery_json %}[
+  {%- for image in efi_killshot_2_pro_product.images -%}
+    {%- unless forloop.first -%},{%- endunless -%}
+    "{{ image | image_url: width: 480 }}"
+  {%- endfor -%}
+]{% endcapture %}
+
+{% capture ignition_black_jack_gallery_json %}[
+  {%- for image in ignition_black_jack_product.images -%}
+    {%- unless forloop.first -%},{%- endunless -%}
+    "{{ image | image_url: width: 480 }}"
+  {%- endfor -%}
+]{% endcapture %}
+
+{% capture ignition_high_roller_gallery_json %}[
+  {%- for image in ignition_high_roller_product.images -%}
+    {%- unless forloop.first -%},{%- endunless -%}
+    "{{ image | image_url: width: 480 }}"
+  {%- endfor -%}
+]{% endcapture %}
+
+{% capture display_5_hd_gallery_json %}[
+  {%- for image in display_5_hd_product.images -%}
+    {%- unless forloop.first -%},{%- endunless -%}
+    "{{ image | image_url: width: 480 }}"
+  {%- endfor -%}
+]{% endcapture %}
+
+{% capture display_8_hd_gallery_json %}[
+  {%- for image in display_8_hd_product.images -%}
+    {%- unless forloop.first -%},{%- endunless -%}
+    "{{ image | image_url: width: 480 }}"
+  {%- endfor -%}
+]{% endcapture %}
+
+{% liquid
+  assign fuel_gallery_compact = fuel_gallery_json | strip_newlines | strip
+  assign fuel_test_2_gallery_compact = fuel_test_2_gallery_json | strip_newlines | strip
+  assign efi_fusion_lite_gallery_compact = efi_fusion_lite_gallery_json | strip_newlines | strip
+  assign efi_killshot_2_pro_gallery_compact = efi_killshot_2_pro_gallery_json | strip_newlines | strip
+  assign ignition_black_jack_gallery_compact = ignition_black_jack_gallery_json | strip_newlines | strip
+  assign ignition_high_roller_gallery_compact = ignition_high_roller_gallery_json | strip_newlines | strip
+  assign display_5_hd_gallery_compact = display_5_hd_gallery_json | strip_newlines | strip
+  assign display_8_hd_gallery_compact = display_8_hd_gallery_json | strip_newlines | strip
+
+  capture efi_fusion_lite_variant_gid
+    echo 'gid://shopify/ProductVariant/'
+    echo efi_fusion_lite_variant.id
+  endcapture
+
+  capture efi_killshot_2_pro_variant_gid
+    echo 'gid://shopify/ProductVariant/'
+    echo efi_killshot_2_pro_variant.id
+  endcapture
+
+  capture ignition_black_jack_variant_gid
+    echo 'gid://shopify/ProductVariant/'
+    echo ignition_black_jack_variant.id
+  endcapture
+
+  capture ignition_high_roller_variant_gid
+    echo 'gid://shopify/ProductVariant/'
+    echo ignition_high_roller_variant.id
+  endcapture
+
+  capture display_5_hd_variant_gid
+    echo 'gid://shopify/ProductVariant/'
+    echo display_5_hd_variant.id
+  endcapture
+
+  capture display_8_hd_variant_gid
+    echo 'gid://shopify/ProductVariant/'
+    echo display_8_hd_variant.id
+  endcapture
+
+  capture builder_option_groups
+    echo 'efi_system~~EFI System~~_builder_efi_variant_id~~ProductBuilderEfi##'
+    echo 'fuel_system~~Fuel System~~_builder_fuel_variant_id~~ProductBuilderFuel##'
+    echo 'ignition~~Ignition~~_builder_ignition_variant_id~~ProductBuilderIgnition##'
+    echo 'display~~Display~~_builder_display_variant_id~~ProductBuilderDisplay'
+  endcapture
+
+  capture builder_option_options
+    echo 'efi_system~~efi_killshot_fusion_lite~~'
+    echo efi_fusion_lite_variant_gid
+    echo '~~'
+    echo efi_fusion_lite_product.title
+    echo '~~'
+    echo efi_fusion_lite_price_cents
+    echo '~~'
+    echo efi_fusion_lite_price_cents
+    echo '~~'
+    echo efi_fusion_lite_price_cents
+    echo '~~true~~'
+    echo efi_fusion_lite_main_image
+    echo '~~'
+    echo efi_fusion_lite_gallery_compact
+    echo '##efi_system~~efi_killshot_2_pro~~'
+    echo efi_killshot_2_pro_variant_gid
+    echo '~~'
+    echo efi_killshot_2_pro_product.title
+    echo '~~'
+    echo efi_killshot_2_pro_price_cents
+    echo '~~'
+    echo efi_killshot_2_pro_price_cents
+    echo '~~'
+    echo efi_killshot_2_pro_price_cents
+    echo '~~true~~'
+    echo efi_killshot_2_pro_main_image
+    echo '~~'
+    echo efi_killshot_2_pro_gallery_compact
+    echo '##'
+    echo 'fuel_system~~fuel_test~~'
+    echo fuel_variant_gid
+    echo '~~Fuel Test~~'
+    echo fuel_price_cents
+    echo '~~'
+    echo fuel_price_cents
+    echo '~~'
+    echo fuel_adjustment_cents
+    echo '~~true~~'
+    echo fuel_main_image
+    echo '~~'
+    echo fuel_gallery_compact
+    echo '##fuel_system~~fuel_test_2~~'
+    echo fuel_test_2_variant_gid
+    echo '~~Fuel Test 2~~'
+    echo fuel_test_2_price_cents
+    echo '~~'
+    echo fuel_price_cents
+    echo '~~'
+    echo fuel_test_2_adjustment_cents
+    echo '~~true~~'
+    echo fuel_test_2_main_image
+    echo '~~'
+    echo fuel_test_2_gallery_compact
+    echo '##ignition~~ignition_black_jack_coil~~'
+    echo ignition_black_jack_variant_gid
+    echo '~~'
+    echo ignition_black_jack_product.title
+    echo '~~'
+    echo ignition_black_jack_price_cents
+    echo '~~'
+    echo ignition_black_jack_price_cents
+    echo '~~'
+    echo ignition_black_jack_price_cents
+    echo '~~true~~'
+    echo ignition_black_jack_main_image
+    echo '~~'
+    echo ignition_black_jack_gallery_compact
+    echo '##ignition~~ignition_high_roller_cdi~~'
+    echo ignition_high_roller_variant_gid
+    echo '~~'
+    echo ignition_high_roller_product.title
+    echo '~~'
+    echo ignition_high_roller_price_cents
+    echo '~~'
+    echo ignition_high_roller_price_cents
+    echo '~~'
+    echo ignition_high_roller_price_cents
+    echo '~~true~~'
+    echo ignition_high_roller_main_image
+    echo '~~'
+    echo ignition_high_roller_gallery_compact
+    echo '##display~~display_5_hd_handheld~~'
+    echo display_5_hd_variant_gid
+    echo '~~'
+    echo display_5_hd_product.title
+    echo '~~'
+    echo display_5_hd_price_cents
+    echo '~~'
+    echo display_5_hd_price_cents
+    echo '~~'
+    echo display_5_hd_price_cents
+    echo '~~true~~'
+    echo display_5_hd_main_image
+    echo '~~'
+    echo display_5_hd_gallery_compact
+    echo '##display~~display_8_hd_handheld~~'
+    echo display_8_hd_variant_gid
+    echo '~~'
+    echo display_8_hd_product.title
+    echo '~~'
+    echo display_8_hd_price_cents
+    echo '~~'
+    echo display_8_hd_price_cents
+    echo '~~'
+    echo display_8_hd_price_cents
+    echo '~~true~~'
+    echo display_8_hd_main_image
+    echo '~~'
+    echo display_8_hd_gallery_compact
+  endcapture
+
+  assign option_group_rows = builder_option_groups | split: '##'
+  assign option_rows = builder_option_options | split: '##'
+%}
+
+<div
+  class="product-builder"
+  data-product-builder
+  data-money-format="{{ shop.money_format | escape }}"
+  data-base-price-cents="{{ builder_base_price_cents }}"
+  data-bundle-discount-basis-points="{{ bundle_discount_basis_points }}"
+  {{ block.shopify_attributes }}
+>
+  <form data-product-builder-form>
+    <input type="hidden" name="id" value="{{ master_variant_id }}">
+
+    <div class="product-builder__layout">
+      <div class="product-builder__config">
+        <div class="product-builder__header">
+          <h2>{{ 'product_builder.title' | t }}</h2>
+        </div>
+
+        <div class="product-builder__presets" data-builder-presets aria-label="Quick builds">
+          <button type="button" data-builder-preset="standard_build" aria-pressed="false">
+            Standard Build
+          </button>
+          <button type="button" data-builder-preset="advanced_build" aria-pressed="false">
+            Advanced Build
+          </button>
+        </div>
+
+        {% for group_row in option_group_rows %}
+          {% liquid
+            assign group = group_row | split: '~~'
+            assign group_key = group[0]
+            assign group_label = group[1]
+            assign group_name = group[2]
+            assign group_id_prefix = group[3]
+          %}
+
+          <div
+            class="product-builder__options"
+            data-builder-option-group="{{ group_key }}"
+            data-builder-option-group-wrapper="{{ group_key }}"
+          >
+            <label for="{{ group_id_prefix }}-{{ block.id }}">
+              {{ group_label }}
+            </label>
+            <select
+              id="{{ group_id_prefix }}-{{ block.id }}"
+              name="{{ group_name }}"
+              data-builder-option-group="{{ group_key }}"
+            >
+              {% for option_row in option_rows %}
+                {% liquid
+                  assign option = option_row | split: '~~'
+                  assign option_group_key = option[0]
+                %}
+
+                {% if option_group_key == group_key %}
+                  {% liquid
+                    assign option_key = option[1]
+                    assign option_gid = option[2]
+                    assign option_label = option[3]
+                    assign option_price_cents = option[4]
+                    assign option_default_price_cents = option[5]
+                    assign option_adjustment_cents = option[6] | plus: 0
+                    assign option_affects_pricing = option[7]
+                    assign option_image = option[8]
+                    assign option_gallery = option[9]
+                  %}
+
+                  <option
+                    value="{{ option_gid }}"
+                    data-option-key="{{ option_key }}"
+                    data-variant-gid="{{ option_gid }}"
+                    data-price-cents="{{ option_price_cents }}"
+                    data-default-price-cents="{{ option_default_price_cents }}"
+                    data-price-adjustment-cents="{{ option_adjustment_cents }}"
+                    data-affects-pricing="{{ option_affects_pricing }}"
+                    {% if option_image != blank %}data-product-image="{{ option_image }}"{% endif %}
+                    {% if option_gallery != blank %}data-gallery-images='{{ option_gallery }}'{% endif %}
+                  >
+                    {{ option_label }}
+                    {% if option_affects_pricing == 'true' %}
+                      {% if option_adjustment_cents > 0 %}
+                        (+{{ option_adjustment_cents | money }})
+                      {% elsif option_adjustment_cents < 0 %}
+                        ({{ option_adjustment_cents | money }})
+                      {% else %}
+                        ({{ option_adjustment_cents | money }})
+                      {% endif %}
+                    {% endif %}
+                  </option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+        {% endfor %}
+
+        <div class="product-builder__price-summary" data-builder-price-summary>
+          <dl>
+            <div class="pb-price-row">
+              <dt>{{ 'product_builder.base_price' | t }}</dt>
+              <dd data-builder-base-price>{{ builder_base_price_cents | money }}</dd>
+            </div>
+            <div class="pb-price-row">
+              <dt>{{ 'product_builder.selected_options' | t }}</dt>
+              <dd data-builder-selected-options>{{ default_configuration_total_cents | money }}</dd>
+            </div>
+            <div class="pb-price-row pb-price-row--config-total">
+              <dt>Configuration Total</dt>
+              <dd data-builder-configuration-total>{{ default_configuration_total_cents | money }}</dd>
+            </div>
+
+            <div class="pb-summary-divider"></div>
+
+            <div class="pb-price-row pb-price-row--discount">
+              <dt>Bundle Discount 5%</dt>
+              <dd data-builder-bundle-discount>-{{ default_bundle_discount_cents | money }}</dd>
+            </div>
+
+            <div class="pb-summary-divider"></div>
+
+            <div class="pb-price-row pb-price-row--final-total">
+              <dt>Final Total</dt>
+              <dd data-builder-final-total>{{ default_final_total_cents | money }}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="product-builder__actions">
+          <button type="submit" data-builder-add-to-cart>
+            {{ 'product_builder.add_master_kit' | t }}
+          </button>
+        </div>
+      </div>
+
+      <div class="product-builder__visual" aria-label="Product image preview">
+        <div class="product-builder__image-preview" data-builder-image-area>
+          <img
+            class="product-builder__image"
+            src="{{ fuel_main_image }}"
+            alt="Fuel Test"
+            width="480"
+            height="480"
+            data-builder-main-image
+          >
+        </div>
+
+        <div class="product-builder__gallery" data-builder-gallery aria-label="Product image gallery">
+          {% for image in fuel_product.images %}
+            <div
+              class="product-builder__gallery-item{% if forloop.first %} product-builder__gallery-item--active{% endif %}"
+              data-gallery-image="{{ image | image_url: width: 120 }}"
+              data-gallery-full="{{ image | image_url: width: 480 }}"
+              role="button"
+              tabindex="0"
+              aria-label="Product image {{ forloop.index }}"
+            >
+              <img src="{{ image | image_url: width: 120 }}" alt="" width="120" height="120" loading="lazy">
+            </div>
+          {% else %}
+            <div class="product-builder__gallery-item product-builder__gallery-item--empty"></div>
+            <div class="product-builder__gallery-item product-builder__gallery-item--empty"></div>
+            <div class="product-builder__gallery-item product-builder__gallery-item--empty"></div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </form>
+
+  {% comment %}Debug: inspect image data in rendered HTML{% endcomment %}
+  <div style="display:none" data-builder-debug
+    data-fuel-product-exists="{{ fuel_product.id | default: 'nil' }}"
+    data-fuel-image-count="{{ fuel_product.images | size }}"
+    data-fuel-main-image="{{ fuel_main_image }}"
+    data-fuel-test-2-product-exists="{{ fuel_test_2_product.id | default: 'nil' }}"
+    data-fuel-test-2-image-count="{{ fuel_test_2_product.images | size }}"
+    data-fuel-test-2-main-image="{{ fuel_test_2_main_image }}">
+  </div>
+
+  <script type="application/json" data-builder-compatibility-rules>
+    {
+      "rules": [
+        {
+          "sourceGroup": "efi_system",
+          "sourceOptionKey": "efi_killshot_fusion_lite",
+          "targetGroup": "fuel_system",
+          "allowedTargetOptionKeys": ["fuel_test"]
+        },
+        {
+          "sourceGroup": "efi_system",
+          "sourceOptionKey": "efi_killshot_2_pro",
+          "targetGroup": "fuel_system",
+          "allowedTargetOptionKeys": ["fuel_test", "fuel_test_2"]
+        }
+      ],
+      "visibilityRules": [
+        {
+          "sourceGroup": "efi_system",
+          "sourceOptionKey": "efi_killshot_fusion_lite",
+          "targetGroup": "display",
+          "visible": false
+        },
+        {
+          "sourceGroup": "efi_system",
+          "sourceOptionKey": "efi_killshot_2_pro",
+          "targetGroup": "display",
+          "visible": true
+        }
+      ],
+      "presets": [
+        {
+          "id": "standard_build",
+          "label": "Standard Build",
+          "selections": {
+            "efi_system": "efi_killshot_fusion_lite",
+            "fuel_system": "fuel_test",
+            "ignition": "ignition_black_jack_coil",
+            "display": "display_5_hd_handheld"
+          }
+        },
+        {
+          "id": "advanced_build",
+          "label": "Advanced Build",
+          "selections": {
+            "efi_system": "efi_killshot_2_pro",
+            "fuel_system": "fuel_test_2",
+            "ignition": "ignition_high_roller_cdi",
+            "display": "display_8_hd_handheld"
+          }
+        }
+      ]
+    }
+  </script>
+  <script>
+    window.PBCompat = window.PBCompat || {
+      config(builder) {
+        const configElement = builder && builder.querySelector("[data-builder-compatibility-rules]");
+
+        try {
+          return JSON.parse(configElement ? configElement.textContent : "{}");
+        } catch {
+          return {};
+        }
+      },
+
+      getSelect(form, group) {
+        return Array.from(form.querySelectorAll("select[data-builder-option-group]"))
+          .find((select) => select.dataset.builderOptionGroup === group);
+      },
+
+      getGroup(form, group) {
+        return Array.from(form.querySelectorAll("[data-builder-option-group-wrapper]"))
+          .find((element) => element.dataset.builderOptionGroupWrapper === group);
+      },
+
+      setActivePreset(builder, presetId) {
+        builder.dataset.activePreset = presetId || "";
+        builder.querySelectorAll("[data-builder-preset]").forEach((button) => {
+          const isActive = button.dataset.builderPreset === presetId;
+          button.classList.toggle("product-builder__preset--active", isActive);
+          button.setAttribute("aria-pressed", isActive ? "true" : "false");
+        });
+      },
+
+      syncActivePreset(builder, form, presets) {
+        const activePreset = presets.find((preset) =>
+          Object.entries(preset.selections || {}).every(([group, optionKey]) =>
+            this.getSelect(form, group)?.selectedOptions?.[0]?.dataset.optionKey === optionKey
+          )
+        );
+
+        this.setActivePreset(builder, activePreset?.id || "");
+      },
+
+      apply(form) {
+        const builder = form.closest("[data-product-builder]");
+        const config = this.config(builder);
+        const rules = config.rules || [];
+        const visibilityRules = config.visibilityRules || [];
+        const presets = config.presets || [];
+
+        form.querySelectorAll("option[data-option-key]").forEach((option) => {
+          option.disabled = false;
+          option.removeAttribute("aria-disabled");
+          delete option.dataset.compatibilityDisabled;
+
+          if (option.dataset.originalLabel) option.textContent = option.dataset.originalLabel;
+        });
+
+        rules.forEach((rule) => {
+          const sourceOption = this.getSelect(form, rule.sourceGroup)?.selectedOptions?.[0];
+          const targetSelect = this.getSelect(form, rule.targetGroup);
+          const allowedOptions = new Set(rule.allowedTargetOptionKeys || []);
+
+          if (!sourceOption || sourceOption.dataset.optionKey !== rule.sourceOptionKey || !targetSelect) return;
+
+          Array.from(targetSelect.options).forEach((option) => {
+            if (allowedOptions.has(option.dataset.optionKey)) return;
+
+            option.dataset.originalLabel = option.dataset.originalLabel || option.textContent.trim();
+            option.disabled = true;
+            option.setAttribute("aria-disabled", "true");
+            option.dataset.compatibilityDisabled = "true";
+            option.textContent = `${option.dataset.originalLabel} (Unavailable)`;
+          });
+
+          if (targetSelect.selectedOptions[0]?.disabled) {
+            const fallbackOption = Array.from(targetSelect.options).find((option) => !option.disabled);
+
+            if (fallbackOption) targetSelect.value = fallbackOption.value;
+          }
+        });
+
+        form.querySelectorAll("[data-builder-option-group-wrapper]").forEach((group) => {
+          group.dataset.wasVisibilityHidden = group.dataset.visibilityHidden === "true" ? "true" : "false";
+          delete group.dataset.visibilityHidden;
+          group.hidden = false;
+          group.removeAttribute("aria-hidden");
+
+          group.querySelectorAll("select, input, button, textarea").forEach((control) => {
+            if (control.dataset.visibilityDisabled) {
+              control.disabled = false;
+              delete control.dataset.visibilityDisabled;
+            }
+
+            control.removeAttribute("tabindex");
+            if (control.setCustomValidity) control.setCustomValidity("");
+          });
+        });
+
+        visibilityRules.forEach((rule) => {
+          const sourceOption = this.getSelect(form, rule.sourceGroup)?.selectedOptions?.[0];
+          const targetGroup = this.getGroup(form, rule.targetGroup);
+          const targetSelect = this.getSelect(form, rule.targetGroup);
+
+          if (!sourceOption || sourceOption.dataset.optionKey !== rule.sourceOptionKey || !targetGroup) return;
+
+          if (rule.visible) {
+            if (targetGroup.dataset.wasVisibilityHidden === "true") {
+              const defaultOption = Array.from(targetSelect?.options || []).find((option) => !option.disabled);
+              if (defaultOption) targetSelect.value = defaultOption.value;
+            }
+            return;
+          }
+
+          targetGroup.hidden = true;
+          targetGroup.dataset.visibilityHidden = "true";
+          targetGroup.setAttribute("aria-hidden", "true");
+          targetGroup.querySelectorAll("select, input, button, textarea").forEach((control) => {
+            if (!control.disabled) control.dataset.visibilityDisabled = "true";
+            control.disabled = true;
+            control.tabIndex = -1;
+            if (control.setCustomValidity) control.setCustomValidity("");
+          });
+        });
+
+        this.syncActivePreset(builder, form, presets);
+      },
+
+      applyPreset(form, presetId) {
+        const builder = form.closest("[data-product-builder]");
+        const preset = (this.config(builder).presets || []).find((item) => item.id === presetId);
+
+        if (!preset) return;
+
+        Object.entries(preset.selections || {}).forEach(([group, optionKey]) => {
+          const select = this.getSelect(form, group);
+          const options = Array.from(select?.options || []);
+          const option = options.find((item) => item.dataset.optionKey === optionKey)
+            || options.find((item) => !item.disabled)
+            || options[0];
+
+          if (option) select.selectedIndex = options.indexOf(option);
+        });
+
+        form.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    };
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-builder-preset]");
+      const form = button && button.closest("[data-product-builder-form]");
+
+      if (!form) return;
+
+      event.preventDefault();
+      window.PBCompat.applyPreset(form, button.dataset.builderPreset);
+    });
+  </script>
+
+  {%- comment -%}
+    Hide Dawn default product content (title, price, add-to-cart, media, related products, etc.)
+    ONLY when the current product is Master Kit Test.
+    This prevents a second purchase path bypassing the Builder.
+  {%- endcomment -%}
+  {%- if product.handle == 'master-kit-test' -%}
+    <style>
+      .product__info-container > .product__title,
+      .product__info-container > .product__text,
+      .product__info-container > [id^="price-"],
+      .product__info-container > [id^="Quantity-Form-"],
+      .product__info-container > .product-form__input,
+      .product__info-container > product-form,
+      .product__info-container > .product__accordion,
+      .product__info-container > share-button,
+      .product__info-container > .product__view-details,
+      .product__info-container > .pickup-availability,
+      .product__info-container > div:has(> form.installment),
+      .product__media-wrapper,
+      [id*="__related-products"],
+      [id*="__image-with-text"],
+      [id*="__multicolumn"] {
+        display: none !important;
+      }
+    </style>
+  {%- endif -%}
+</div>
+
+{% schema %}
+{
+  "name": "Product builder",
+  "target": "section",
+  "stylesheet": "product-builder.css",
+  "javascript": "product-builder.js",
+  "settings": [
+    {
+      "type": "product",
+      "id": "master_product",
+      "label": "Master Kit product"
+    }
+  ]
+}
+{% endschema %}

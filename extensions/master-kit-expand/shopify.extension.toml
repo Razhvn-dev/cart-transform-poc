@@ -1,0 +1,19 @@
+api_version = "2025-10"
+
+[[extensions]]
+name = "Master Kit Expand"
+handle = "master-kit-expand"
+
+uid = "67c62dc1-f689-b420-3491-32bd242a5a2d29f7d2c6"
+type = "function"
+description = "POC: expands Master Kit Test into EFI, Fuel, and Coil test products"
+
+[[extensions.targeting]]
+target = "purchase.cart-transform.run"
+input_query = "src/run.graphql"
+export = "run"
+
+[extensions.build]
+command = "npm run build"
+path = "dist/index.wasm"
+watch = ["src/**/*.js"]

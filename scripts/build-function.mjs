@@ -1,0 +1,128 @@
+import { execSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+} from "node:fs";
+import { gunzipSync } from "node:zlib";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const extDir = resolve(__dirname, "../extensions/master-kit-expand");
+const cliBin = resolve(__dirname, "../node_modules/@shopify/cli/bin");
+const javyVersion = "9.0.0";
+const javyPluginVersion = "4";
+
+const javyExe = join(cliBin, `javy-${javyVersion}.exe`);
+const javyPlugin = join(cliBin, `shopify_functions_javy_v${javyPluginVersion}.wasm`);
+const distDir = join(extDir, "dist");
+const functionJs = join(distDir, "function.js");
+const functionWasm = join(distDir, "index.wasm");
+const witFile = join(distDir, "javy-world.wit");
+
+function run(cmd, cwd = extDir) {
+  execSync(cmd, { stdio: "inherit", cwd });
+}
+
+async function ensureJavy() {
+  if (!existsSync(javyExe)) {
+    console.log("Downloading javy...");
+    const javyUrl = `https://github.com/bytecodealliance/javy/releases/download/v${javyVersion}/javy-x86_64-windows-v${javyVersion}.gz`;
+    const response = await fetch(javyUrl);
+    if (!response.ok) throw new Error(`Failed to download javy: ${javyUrl}`);
+    writeFileSync(javyExe, gunzipSync(Buffer.from(await response.arrayBuffer())));
+  }
+
+  if (!existsSync(javyPlugin)) {
+    console.log("Downloading Shopify javy plugin...");
+    const pluginUrl = `https://cdn.shopify.com/shopifycloud/shopify-functions-javy-plugin/shopify_functions_javy_v${javyPluginVersion}.wasm`;
+    const response = await fetch(pluginUrl);
+    if (!response.ok) throw new Error(`Failed to download plugin: ${pluginUrl}`);
+    writeFileSync(javyPlugin, Buffer.from(await response.arrayBuffer()));
+  }
+}
+
+function buildEntrySource() {
+  return `
+import __runFunction from "@shopify/shopify_function/run";
+import { run as run_run } from "./src/run.js";
+
+export function run() {
+  return __runFunction(run_run);
+}
+`.trim();
+}
+
+async function bundleFunction() {
+  mkdirSync(distDir, { recursive: true });
+  run("npx graphql-code-generator --config package.json");
+
+  const require = createRequire(import.meta.url);
+  let esbuild;
+  try {
+    esbuild = require("esbuild");
+  } catch {
+    esbuild = require(
+      resolve(__dirname, "../node_modules/@shopify/cli/node_modules/esbuild"),
+    );
+  }
+
+  await esbuild.build({
+    stdin: {
+      contents: buildEntrySource(),
+      loader: "ts",
+      resolveDir: extDir,
+    },
+    outfile: functionJs,
+    bundle: true,
+    format: "esm",
+    platform: "neutral",
+    target: "es2020",
+    alias: {
+      "@shopify/shopify_function/run": resolve(
+        __dirname,
+        "../node_modules/@shopify/shopify_function/run.ts",
+      ),
+    },
+  });
+}
+
+function compileWasm() {
+  writeFileSync(
+    witFile,
+    `package function:impl;
+
+world shopify-function {
+  export %run: func();
+}
+`,
+    "utf8",
+  );
+
+  const args = [
+    "build",
+    "-C",
+    "dynamic",
+    "-C",
+    `plugin=${javyPlugin}`,
+    "-C",
+    `wit=${witFile}`,
+    "-C",
+    "wit-world=shopify-function",
+    "-o",
+    functionWasm,
+    "dist/function.js",
+  ];
+
+  execSync(`"${javyExe}" ${args.map((a) => `"${a}"`).join(" ")}`, {
+    cwd: extDir,
+    stdio: "inherit",
+  });
+}
+
+await ensureJavy();
+await bundleFunction();
+compileWasm();
+console.log(`Built ${functionWasm}`);

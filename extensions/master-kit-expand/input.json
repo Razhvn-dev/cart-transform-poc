@@ -1,0 +1,17 @@
+{
+  "cart": {
+    "lines": [
+      {
+        "id": "gid://shopify/CartLine/1",
+        "quantity": 1,
+        "builderFuelVariantId": {
+          "value": "gid://shopify/ProductVariant/51505348346134"
+        },
+        "merchandise": {
+          "__typename": "ProductVariant",
+          "id": "gid://shopify/ProductVariant/51505325605142"
+        }
+      }
+    ]
+  }
+}

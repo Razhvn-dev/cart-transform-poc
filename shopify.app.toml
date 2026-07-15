@@ -2,7 +2,7 @@
 
 client_id = "529f335a66e6b1b2924ba30c1b8630b4"
 name = "cart-transform-poc"
-application_url = "http://localhost:3000"
+application_url = "https://fyubrlrlhzvn.sealosbja.site"
 embedded = true
 
 [access_scopes]
@@ -21,7 +21,7 @@ api_version = "2026-10"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "http://localhost:3000/auth/callback" ]
+redirect_urls = [ "https://fyubrlrlhzvn.sealosbja.site/auth/callback" ]
 
 [build]
 automatically_update_urls_on_dev = true

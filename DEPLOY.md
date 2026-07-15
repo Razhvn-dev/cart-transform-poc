@@ -1,33 +1,146 @@
-# Sealos Docker Deployment
+# Development and Release Workflow
 
-This project is a Shopify Remix app prepared for containerized deployment.
+This project uses a two-mode workflow. The root `AGENTS.md` is the mandatory authority for AI agents; this file mirrors the same workflow for human operators.
 
-## Project Runtime
+## What Huang Needs To Say
 
-- Package manager: npm
-- Build command: `npm run build`
-- Production start command: `npm run docker-start`
-- Remix server command: `remix-serve ./build/server/index.js`
-- Node runtime: Node 24 Alpine image
-- Container port: `3000`
+For local work:
+
+> 按项目工作流继续开发这个功能，完成后只做本地验证和商店预览，不要发布。
+
+For release:
+
+> 这个功能已经确认通过，按项目工作流正式发布。
+
+## Mode A - Local Development
+
+Use this mode for all feature work unless Huang explicitly approves a stable release.
+
+Trigger phrases include:
+
+- 本地开发
+- 本地验证
+- 先看效果
+- 不要发布
+- local preview
+- local validation
+
+Required behavior:
+
+1. Modify code locally.
+2. Run validation:
+
+   ```powershell
+   npm run validate:local
+   ```
+
+3. Start local Shopify preview only when Huang asks for store preview:
+
+   ```powershell
+   npm run dev:local
+   ```
+
+4. Open/test the feature in the Shopify development store.
+5. Report the preview URL and verification result.
+6. Stop and wait for Huang's approval.
+
+Do not commit, push, update DevBox, publish Sealos, run stable Shopify deployment, update Shopify stable URLs, or modify Shopify store data in Mode A.
+
+## Mode B - Stable Release
+
+Use this mode only after Huang explicitly says the feature has passed and is approved for release.
+
+Trigger phrases include:
+
+- 正式发布
+- 发布到稳定环境
+- 已确认通过
+- stable release
+- release approved
+
+Required behavior:
+
+1. Confirm the feature already passed Mode A local validation.
+2. Run final validation:
+
+   ```powershell
+   npm run validate:stable
+   ```
+
+3. Commit approved changes with an intentional message.
+4. Push to GitHub.
+5. Update the DevBox repository from GitHub.
+6. Build the project in DevBox.
+7. Publish a new DevBox version.
+8. Redeploy/update the Sealos Application.
+9. Deploy Shopify app configuration/extensions using the stable dev config:
+
+   ```powershell
+   npm run deploy:dev
+   ```
+
+10. Verify the Shopify Admin app loads from Sealos.
+11. Verify Standard and Advanced cart/checkout flows.
+12. Report commit, GitHub push, Sealos version, Shopify app version, and smoke-test results.
+
+## Exact NPM Commands
+
+Local preview:
+
+```powershell
+npm run dev:local
+```
+
+Stable Shopify deployment:
+
+```powershell
+npm run deploy:dev
+```
+
+Validation:
+
+```powershell
+npm run lint
+npm run build
+npm run test:function
+npm run build:function
+```
+
+Combined validation:
+
+```powershell
+npm run validate:local
+npm run validate:stable
+```
+
+## Runtime Notes
+
+- Package manager: npm.
+- Build command: `npm run build`.
+- Production start command: `npm run docker-start`.
+- Remix server command: `remix-serve ./build/server/index.js`.
+- Container port: `3000`.
+- Keep Shopify Functions and Theme App Extension deployment separate from the web container release process unless Mode B is explicitly approved.
 
 `npm run docker-start` runs:
 
-```sh
+```powershell
 npm run setup && npm run start
 ```
 
 `npm run setup` runs Prisma generation and migrations:
 
-```sh
+```powershell
 prisma generate && prisma migrate deploy
 ```
 
-## Required Environment Variables
+## Sealos Environment Variables
 
-Set these in Sealos Application environment variables:
+Do not change Sealos environment variables during Mode A.
 
-```sh
+Required values for the Sealos Application are managed outside this document:
+
+```text
 NODE_ENV=production
 PORT=3000
 SHOPIFY_API_KEY=...
@@ -38,7 +151,7 @@ SCOPES=write_products,write_cart_transforms,read_cart_transforms
 
 Optional:
 
-```sh
+```text
 SHOP_CUSTOM_DOMAIN=your-shop-custom-domain.example.com
 ```
 
@@ -58,63 +171,3 @@ Before a long-lived production deployment, choose one persistence strategy:
 
 - bind-mount only the SQLite database file at `/app/prisma/dev.sqlite`, or
 - migrate Prisma to an environment-driven `DATABASE_URL` and use a managed database.
-
-## Build Locally
-
-```sh
-docker build -t cart-transform-poc .
-```
-
-## Run Locally
-
-```sh
-docker run --rm -p 3000:3000 --env-file .env cart-transform-poc
-```
-
-## Run With Docker Compose
-
-```sh
-docker compose up --build
-```
-
-Stop:
-
-```sh
-docker compose down
-```
-
-## Sealos Deployment Recommendations
-
-1. Create a Sealos Application from this Docker image or repository.
-2. Set container port to `3000`.
-3. Set all required Shopify environment variables.
-4. Add a persistence strategy for Shopify app sessions before long-lived production use.
-5. Use HTTPS public ingress for the app domain.
-6. Set `SHOPIFY_APP_URL` to the final HTTPS Sealos domain.
-7. Keep Shopify Functions and Theme App Extension deployment separate from the web container release process.
-
-## Updating Shopify Application URL
-
-After Sealos provides the final HTTPS domain:
-
-1. Set `SHOPIFY_APP_URL` in Sealos to the final domain.
-2. Update `application_url` in the Shopify app configuration for the deployed app.
-3. Update OAuth redirect URLs to:
-
-```text
-https://your-public-sealos-domain.example.com/auth/callback
-```
-
-4. Apply the app configuration through the normal Shopify app deployment process when ready.
-
-Do not point production Shopify app URLs at a temporary local tunnel.
-
-## Production Smoke Check
-
-After the container starts:
-
-```sh
-curl https://your-public-sealos-domain.example.com
-```
-
-Then open the embedded app from Shopify Admin and complete OAuth installation.

@@ -24,7 +24,7 @@ function parseArgs() {
 
 function appExecute(store, query, variables = {}) {
   const vars = JSON.stringify(variables).replace(/"/g, '\\"');
-  const command = `shopify app execute --store ${store} --version 2025-10 --query "${query.replace(/\n/g, " ").replace(/"/g, '\\"')}" --variables "${vars}"`;
+  const command = `shopify app execute --store ${store} --version 2026-04 --query "${query.replace(/\n/g, " ").replace(/"/g, '\\"')}" --variables "${vars}"`;
   const stdout = execSync(command, { encoding: "utf8" });
   return JSON.parse(stdout);
 }

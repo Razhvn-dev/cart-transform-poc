@@ -13,7 +13,7 @@ function run(query, variables = {}) {
   writeFileSync(variableFile, JSON.stringify(variables), "utf8");
   try {
     const stdout = execSync(
-      `shopify store execute --store ${store} --version 2025-10 --json --query-file "${queryFile}" --variable-file "${variableFile}"`,
+      `shopify store execute --store ${store} --version 2026-04 --json --query-file "${queryFile}" --variable-file "${variableFile}"`,
       { encoding: "utf8" },
     );
     return JSON.parse(stdout);

@@ -185,7 +185,7 @@ function runStoreQuery(store, query, variables = {}, allowMutations = false) {
     writeFileSync(queryFile, query, "utf8");
     writeFileSync(variableFile, JSON.stringify(variables), "utf8");
 
-    let command = `shopify store execute --store ${store} --version 2025-10 --json --query-file "${queryFile}" --variable-file "${variableFile}"`;
+    let command = `shopify store execute --store ${store} --version 2026-04 --json --query-file "${queryFile}" --variable-file "${variableFile}"`;
     if (allowMutations) {
       command += " --allow-mutations";
     }

@@ -1,0 +1,27 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+name = "cart-transform-poc-dev"
+application_url = "https://fyubrlrlhzvn.sealosbja.site"
+embedded = true
+client_id = "d25c62f609855572f3f266765d105ebb"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "write_products,write_cart_transforms,read_cart_transforms,read_metaobjects,write_metaobjects"
+
+[webhooks]
+api_version = "2026-04"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+[auth]
+redirect_urls = [ "https://fyubrlrlhzvn.sealosbja.site/auth/callback" ]
+
+[build]
+automatically_update_urls_on_dev = false

@@ -8,9 +8,18 @@ import { gunzipSync } from "node:zlib";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import {
+  assertProductionCleanArtifacts,
+  assertProfileAppConfigAllowed,
+  assertStage2CleanArtifacts,
+  assertStage3GeneratedInputType,
+  extDir,
+  resolveProfile,
+  restoreProductionFunctionProfile,
+  withTemporaryFunctionProfile,
+} from "./function-profile.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const extDir = resolve(__dirname, "../extensions/master-kit-expand");
 const cliBin = resolve(__dirname, "../node_modules/@shopify/cli/bin");
 const javyVersion = "9.0.0";
 const javyPluginVersion = "4";
@@ -21,6 +30,30 @@ const distDir = join(extDir, "dist");
 const functionJs = join(distDir, "function.js");
 const functionWasm = join(distDir, "index.wasm");
 const witFile = join(distDir, "javy-world.wit");
+const entryArgIndex = process.argv.indexOf("--entry");
+const profileArgIndex = process.argv.indexOf("--profile");
+const appConfigArgIndex = process.argv.indexOf("--app-config");
+const functionProfile =
+  profileArgIndex >= 0
+    ? process.argv[profileArgIndex + 1]
+    : process.env.FUNCTION_PROFILE || "production";
+const appConfig =
+  appConfigArgIndex >= 0
+    ? process.argv[appConfigArgIndex + 1]
+    : process.env.SHOPIFY_APP_CONFIG || null;
+const selectedProfile = resolveProfile(functionProfile);
+const entryPath =
+  entryArgIndex >= 0
+    ? process.argv[entryArgIndex + 1]
+    : selectedProfile.entry;
+const expectedEntryPath = selectedProfile.entry;
+
+if (entryPath !== expectedEntryPath) {
+  throw new Error(
+    `Function profile "${functionProfile}" must use ${expectedEntryPath}; received ${entryPath}.`,
+  );
+}
+assertProfileAppConfigAllowed(functionProfile, appConfig);
 
 function run(cmd, cwd = extDir) {
   execSync(cmd, { stdio: "inherit", cwd });
@@ -47,7 +80,7 @@ async function ensureJavy() {
 function buildEntrySource() {
   return `
 import __runFunction from "@shopify/shopify_function/run";
-import { run as run_run } from "./src/run.js";
+import { run as run_run } from "./${entryPath}";
 
 export function run() {
   return __runFunction(run_run);
@@ -122,7 +155,35 @@ world shopify-function {
   });
 }
 
-await ensureJavy();
-await bundleFunction();
-compileWasm();
-console.log(`Built ${functionWasm}`);
+try {
+  await withTemporaryFunctionProfile(functionProfile, { appConfig }, async (selected) => {
+    console.log(`Using ${functionProfile} Function profile (${selected.query}, ${entryPath})`);
+    await ensureJavy();
+    await bundleFunction();
+    if (
+      functionProfile === "bisect-stage-3" ||
+      functionProfile === "bisect-stage-4" ||
+      functionProfile === "bisect-stage-5" ||
+      functionProfile === "bisect-stage-6" ||
+      functionProfile === "bisect-stage-7" ||
+      functionProfile === "bisect-stage-8"
+    ) {
+      assertStage3GeneratedInputType();
+    }
+    compileWasm();
+    console.log(`Built ${functionWasm}`);
+  });
+} finally {
+  if (functionProfile !== "production") {
+    restoreProductionFunctionProfile();
+    run("npx graphql-code-generator --config package.json");
+  }
+}
+
+if (functionProfile === "production") {
+  assertProductionCleanArtifacts();
+}
+
+if (functionProfile === "bisect-stage-2") {
+  assertStage2CleanArtifacts();
+}

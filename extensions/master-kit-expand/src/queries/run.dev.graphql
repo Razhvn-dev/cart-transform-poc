@@ -39,6 +39,13 @@ query RunInput {
           id
           product {
             id
+            runtimeSnapshotDevMetafield: metafield(
+              namespace: "aces_dev"
+              key: "bundle_runtime_snapshot_test"
+            ) {
+              value
+              jsonValue
+            }
           }
         }
       }

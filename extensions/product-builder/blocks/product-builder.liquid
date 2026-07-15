@@ -50,6 +50,16 @@ Renders the POC product builder for the Master Kit product page.
     assign master_variant_id = master_variant.id
   endif
 
+  capture master_product_gid
+    echo 'gid://shopify/Product/'
+    echo master_product.id
+  endcapture
+
+  capture master_variant_gid
+    echo 'gid://shopify/ProductVariant/'
+    echo master_variant_id
+  endcapture
+
   assign fuel_price_cents = fuel_variant.price | default: 0
   assign fuel_test_2_price_cents = fuel_test_2_variant.price | default: 0
   assign fuel_adjustment_cents = fuel_price_cents
@@ -296,6 +306,10 @@ Renders the POC product builder for the Master Kit product page.
   data-money-format="{{ shop.money_format | escape }}"
   data-base-price-cents="{{ builder_base_price_cents }}"
   data-bundle-discount-basis-points="{{ bundle_discount_basis_points }}"
+  data-parent-product-gid="{{ master_product_gid | strip | escape }}"
+  data-parent-variant-gid="{{ master_variant_gid | strip | escape }}"
+  data-parent-sku="{{ master_variant.sku | default: '' | escape }}"
+  data-parent-title="{{ master_product.title | default: 'Master Kit Test' | escape }}"
   {{ block.shopify_attributes }}
 >
   <form data-product-builder-form>
@@ -456,16 +470,6 @@ Renders the POC product builder for the Master Kit product page.
       </div>
     </div>
   </form>
-
-  {% comment %}Debug: inspect image data in rendered HTML{% endcomment %}
-  <div style="display:none" data-builder-debug
-    data-fuel-product-exists="{{ fuel_product.id | default: 'nil' }}"
-    data-fuel-image-count="{{ fuel_product.images | size }}"
-    data-fuel-main-image="{{ fuel_main_image }}"
-    data-fuel-test-2-product-exists="{{ fuel_test_2_product.id | default: 'nil' }}"
-    data-fuel-test-2-image-count="{{ fuel_test_2_product.images | size }}"
-    data-fuel-test-2-main-image="{{ fuel_test_2_main_image }}">
-  </div>
 
   <script type="application/json" data-builder-compatibility-rules>
     {

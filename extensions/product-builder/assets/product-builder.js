@@ -28,6 +28,7 @@ async function handleBuilderAddToCart(form) {
 
   const submitButton = form.querySelector('button[type="submit"]');
   const formData = new FormData(form);
+  const builder = form.closest("[data-product-builder]");
   const variantId = Number(formData.get("id"));
   const efiVariantId = getSelectedVariantGid(form, "_builder_efi_variant_id");
   const fuelVariantId = getSelectedVariantGid(form, "_builder_fuel_variant_id");
@@ -39,25 +40,38 @@ async function handleBuilderAddToCart(form) {
     form,
     "_builder_display_variant_id",
   );
+  const parentMetadata = getParentMetadata(builder);
 
-  if (!variantId || !efiVariantId || !fuelVariantId || !ignitionVariantId) {
+  if (
+    !variantId ||
+    !efiVariantId ||
+    !fuelVariantId ||
+    !ignitionVariantId ||
+    !parentMetadata
+  ) {
     isBuilderSubmitting = false;
     return;
-  }
-
-  const properties = {
-    _builder_efi_variant_id: efiVariantId,
-    _builder_fuel_variant_id: fuelVariantId,
-    _builder_ignition_variant_id: ignitionVariantId,
-  };
-
-  if (displayVariantId) {
-    properties._builder_display_variant_id = displayVariantId;
   }
 
   if (submitButton) submitButton.disabled = true;
 
   try {
+    const properties = {
+      _bundle_id: generateBundleId(),
+      _bundle_schema_version: "1",
+      _parent_product_gid: parentMetadata.productGid,
+      _parent_variant_gid: parentMetadata.variantGid,
+      _parent_sku: parentMetadata.sku,
+      _parent_title: parentMetadata.title,
+      _builder_efi_variant_id: efiVariantId,
+      _builder_fuel_variant_id: fuelVariantId,
+      _builder_ignition_variant_id: ignitionVariantId,
+    };
+
+    if (displayVariantId) {
+      properties._builder_display_variant_id = displayVariantId;
+    }
+
     const response = await fetch("/cart/add.js", {
       method: "POST",
       headers: {
@@ -124,6 +138,62 @@ function isVariantGid(value) {
     typeof value === "string" &&
     /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(value)
   );
+}
+
+function getParentMetadata(builder) {
+  if (!builder) {
+    return null;
+  }
+
+  const { parentProductGid, parentVariantGid, parentSku, parentTitle } =
+    builder.dataset;
+
+  if (!isProductGid(parentProductGid) || !isVariantGid(parentVariantGid)) {
+    return null;
+  }
+
+  return {
+    productGid: parentProductGid,
+    variantGid: parentVariantGid,
+    sku: parentSku || "",
+    title: parentTitle || "",
+  };
+}
+
+function isProductGid(value) {
+  return (
+    typeof value === "string" &&
+    /^gid:\/\/shopify\/Product\/\d+$/.test(value)
+  );
+}
+
+function generateBundleId() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+
+  const bytes = new Uint8Array(16);
+
+  if (window.crypto?.getRandomValues) {
+    window.crypto.getRandomValues(bytes);
+  } else {
+    throw new Error("Secure UUID generation is unavailable");
+  }
+
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join("-");
 }
 
 function parseMoneyValue(value) {

@@ -2,6 +2,7 @@
   "name": "cart-transform-poc",
   "private": true,
   "scripts": {
+    "test": "vitest run",
     "build": "remix vite:build",
     "dev": "npm run dev:local",
     "dev:local": "set SHOPIFY_APP_CONFIG=shopify.app.local.toml&& set FUNCTION_PROFILE=dev&& C:\\Users\\Administrator\\AppData\\Roaming\\npm\\shopify.cmd app dev --config shopify.app.local.toml --store huang-mvqquz1p.myshopify.com",

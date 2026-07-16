@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { BundleAdminApplicationError } from "./bundle-admin.service.js";
-import { createBundleAdminRouteHandlers } from "./bundle-admin.http.server.js";
+import { createBundleAdminHttpResponse, createBundleAdminRouteHandlers } from "./bundle-admin.http.server.js";
 
 const definitionId = "f6cf6c74-90a6-4f15-9e4f-2dbeb2fc4b89";
 const revisionId = "1b9b0e1d-0f9f-4ea4-8bb4-1f2dc1aef702";
@@ -14,6 +14,7 @@ function serviceStub() {
     listBundles: vi.fn(() => []),
     getBundleDetail: vi.fn(() => ({ definition: { bundle_definition_id: definitionId }, revisions: [] })),
     createBundleDefinition: vi.fn(() => ({ definition: { bundle_definition_id: definitionId }, revisions: [] })),
+    updateBundleDefinition: vi.fn(() => ({ definition: { bundle_definition_id: definitionId }, revisions: [] })),
     createDraftRevision: vi.fn(() => ({ revision_id: revisionId, status: "draft" })),
     cloneActiveRevisionToDraft: vi.fn(() => ({ revision_id: revisionId, status: "draft" })),
     updateDraftRevision: vi.fn(() => ({ revision_id: revisionId, status: "draft" })),
@@ -33,7 +34,7 @@ function request(method, body = undefined, headers = {}) {
 }
 
 async function responseBody(response) {
-  return { status: response.status, body: await response.json() };
+  return { status: response.status, cacheControl: response.headers.get("Cache-Control"), body: await response.json() };
 }
 
 describe("Bundle Admin authenticated route handlers", () => {
@@ -41,8 +42,18 @@ describe("Bundle Admin authenticated route handlers", () => {
     const { routes, service } = handlers();
     const result = await responseBody(await routes.listBundles({ request: request("GET"), params: {} }));
 
-    expect(result).toEqual({ status: 200, body: { ok: true, data: [] } });
+    expect(result).toEqual({ status: 200, cacheControl: "no-store", body: { ok: true, data: [] } });
     expect(service.listBundles).toHaveBeenCalledOnce();
+  });
+
+  it("creates Remix Node-compatible JSON responses while preserving the envelope", async () => {
+    const result = await responseBody(createBundleAdminHttpResponse(201, { ok: true, data: { created: true } }));
+
+    expect(result).toEqual({
+      status: 201,
+      cacheControl: "no-store",
+      body: { ok: true, data: { created: true } },
+    });
   });
 
   it.each([401, 403])("maps Shopify authentication failure %s to a normalized response", async (status) => {
@@ -80,6 +91,23 @@ describe("Bundle Admin authenticated route handlers", () => {
     expect(service.createBundleDefinition).toHaveBeenCalledWith(expect.objectContaining({
       slug: "aces-master-kit",
       created_by: "test.myshopify.com",
+    }));
+  });
+
+  it("updates Definition basic fields through the existing detail resource", async () => {
+    const { routes, service } = handlers();
+    const result = await responseBody(await routes.updateBundleDefinition({
+      request: request("PUT", {
+        slug: "aces-master-kit-updated",
+        parent_binding: { product_gid: "gid://shopify/Product/1", variant_gid: "gid://shopify/ProductVariant/1" },
+      }),
+      params: { bundleDefinitionId: definitionId },
+    }));
+
+    expect(result).toMatchObject({ status: 200, body: { ok: true } });
+    expect(service.updateBundleDefinition).toHaveBeenCalledWith(expect.objectContaining({
+      bundle_definition_id: definitionId,
+      updated_by: "test.myshopify.com",
     }));
   });
 

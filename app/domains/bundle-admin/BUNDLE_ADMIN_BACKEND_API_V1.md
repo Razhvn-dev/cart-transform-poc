@@ -13,6 +13,7 @@ This local application layer has authenticated headless Remix resource routes. R
 | `listBundles()` | none | `BundleSummary[]` |
 | `getBundleDetail()` | `bundle_definition_id` | `BundleDetail` |
 | `createBundleDefinition()` | stable ID, slug, parent binding, actor | `BundleDetail` |
+| `updateBundleDefinition()` | stable ID, slug, parent binding, actor | `BundleDetail` |
 | `createDraftRevision()` | definition ID, editable configuration, actor, optional revision ID | `RevisionDetail` |
 | `cloneActiveRevisionToDraft()` | definition ID, actor, optional revision ID | `RevisionDetail` |
 | `updateDraftRevision()` | revision ID, editable configuration, actor | `RevisionDetail` |
@@ -21,7 +22,7 @@ This local application layer has authenticated headless Remix resource routes. R
 | `compilePreview()` | draft revision ID | validation, size, checksum, counts, active diff |
 | `compareDraftAgainstActive()` | draft revision ID | exact flag and structural differences |
 
-`BundleSummary` contains definition identity, parent binding, active revision pointer/number, revision count, and update time. `RevisionDetail` contains the editable configuration. Runtime Snapshot content is never an input or returned as editable data; only immutable `runtime_snapshot_ref` metadata appears on published-history DTOs.
+`BundleSummary` contains definition identity, parent binding, active and latest-draft revision pointers/numbers, revision count, and update time. `BundleDetail` exposes full configuration only for draft revisions so the editor can save through the draft-only command; immutable revision history remains summary-only. Runtime Snapshot content is never an input or returned as editable data; only immutable `runtime_snapshot_ref` metadata appears on published-history DTOs.
 
 ## Errors
 
@@ -51,6 +52,7 @@ Every route calls the existing Shopify embedded-app `authenticate.admin(request)
 | `GET` | `/app/bundle-admin/bundles` | `listBundles` |
 | `POST` | `/app/bundle-admin/bundles` | `createBundleDefinition` |
 | `GET` | `/app/bundle-admin/bundles/:bundleDefinitionId` | `getBundleDetail` |
+| `PUT` | `/app/bundle-admin/bundles/:bundleDefinitionId` | `updateBundleDefinition` |
 | `POST` | `/app/bundle-admin/bundles/:bundleDefinitionId/draft-revisions` | `createDraftRevision` |
 | `POST` | `/app/bundle-admin/bundles/:bundleDefinitionId/clone-active` | `cloneActiveRevisionToDraft` |
 | `GET` | `/app/bundle-admin/bundles/:bundleDefinitionId/revisions` | `listRevisionHistory` |

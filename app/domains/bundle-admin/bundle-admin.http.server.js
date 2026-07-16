@@ -1,3 +1,4 @@
+import { json } from "@remix-run/node";
 import { BundleAdminApplicationError, toApplicationErrorDto } from "./bundle-admin.service.js";
 
 export function createBundleAdminRouteHandlers({ authenticateAdmin, service, getService = () => service }) {
@@ -27,6 +28,21 @@ export function createBundleAdminRouteHandlers({ authenticateAdmin, service, get
         };
       },
       invoke: (currentService, input) => currentService.createBundleDefinition(input),
+    }),
+    updateBundleDefinition: (args) => execute(args, {
+      method: "PUT",
+      authenticateAdmin,
+      getService,
+      input: async ({ request, params, session }) => {
+        const body = await jsonBody(request);
+        return {
+          bundle_definition_id: requiredParam(params, "bundleDefinitionId"),
+          slug: requiredString(body.slug, "slug"),
+          parent_binding: requiredObject(body.parent_binding, "parent_binding"),
+          updated_by: actor(session),
+        };
+      },
+      invoke: (currentService, input) => currentService.updateBundleDefinition(input),
     }),
     createDraftRevision: (args) => execute(args, {
       method: "POST",
@@ -112,7 +128,7 @@ export function createBundleAdminRouteHandlers({ authenticateAdmin, service, get
 }
 
 export function createBundleAdminHttpResponse(status, payload) {
-  return Response.json(payload, { status, headers: { "Cache-Control": "no-store" } });
+  return json(payload, { status, headers: { "Cache-Control": "no-store" } });
 }
 
 async function execute(args, { method, authenticateAdmin, getService, input = () => ({}), invoke }) {

@@ -78,6 +78,29 @@ export function createBundleAdminService({
       }
     },
 
+    async updateBundleDefinition({ bundle_definition_id: bundleDefinitionId, slug, parent_binding: parentBinding, updated_by }) {
+      try {
+        const existing = await readDefinition(persistence, bundleDefinitionId);
+        const definitions = await repository.listBundleDefinitions();
+        if (definitions.some((definition) => (
+          definition.bundle_definition_id !== bundleDefinitionId
+          && definition.parent_binding.variant_gid === parentBinding?.variant_gid
+        ))) {
+          throw new BundleAdminApplicationError("CONFLICT", "parent variant is already bound to another bundle definition");
+        }
+        const definition = parseBundleDefinition({
+          ...existing,
+          slug,
+          parent_binding: parentBinding,
+          updated_at: now(),
+        });
+        await persistence.writeBundleDefinition({ definition, updated_by });
+        return toBundleDetail(definition, await listRevisions(repository, bundleDefinitionId));
+      } catch (error) {
+        throw normalizeApplicationError(error);
+      }
+    },
+
     async createDraftRevision({ bundle_definition_id: bundleDefinitionId, configuration, created_by, revision_id: revisionId = idFactory() }) {
       try {
         const definition = await readDefinition(persistence, bundleDefinitionId);
@@ -316,12 +339,17 @@ function countConfiguration(configuration) {
 
 function toBundleSummary(definition, revisions) {
   const active = revisions.find((revision) => revision.revision_id === definition.active_revision_id) ?? null;
+  const draft = revisions
+    .filter((revision) => revision.status === "draft")
+    .sort((left, right) => right.revision_number - left.revision_number)[0] ?? null;
   return {
     bundle_definition_id: definition.bundle_definition_id,
     slug: definition.slug,
     parent_binding: structuredClone(definition.parent_binding),
     active_revision_id: definition.active_revision_id,
     active_revision_number: active?.revision_number ?? null,
+    draft_revision_id: draft?.revision_id ?? null,
+    draft_revision_number: draft?.revision_number ?? null,
     revision_count: revisions.length,
     updated_at: definition.updated_at,
   };
@@ -330,7 +358,9 @@ function toBundleSummary(definition, revisions) {
 function toBundleDetail(definition, revisions) {
   return {
     definition: structuredClone(definition),
-    revisions: revisions.sort((left, right) => right.revision_number - left.revision_number).map(toRevisionSummary),
+    revisions: revisions
+      .sort((left, right) => right.revision_number - left.revision_number)
+      .map((revision) => revision.status === "draft" ? toRevisionDetail(revision) : toRevisionSummary(revision)),
   };
 }
 

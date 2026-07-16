@@ -100,6 +100,21 @@ describe("bundle admin application service", () => {
     expect((await app.getBundleDetail({ bundle_definition_id: definitionId })).definition.slug).toBe("aces-master-kit");
   });
 
+  it("updates a definition while keeping revision data immutable and draft configuration editable", async () => {
+    const draft = revision({ id: draftRevisionId, number: 2, status: "draft" });
+    const { app } = service({ definitions: [definition(publishedRevisionId)], revisions: [revision(), draft] });
+    const updated = await app.updateBundleDefinition({
+      bundle_definition_id: definitionId,
+      slug: "aces-master-kit-updated",
+      parent_binding: definition().parent_binding,
+      updated_by: "editor",
+    });
+
+    expect(updated.definition).toMatchObject({ slug: "aces-master-kit-updated", active_revision_id: publishedRevisionId });
+    expect(updated.revisions.find((item) => item.revision_id === publishedRevisionId)).not.toHaveProperty("configuration");
+    expect(updated.revisions.find((item) => item.revision_id === draftRevisionId)).toHaveProperty("configuration");
+  });
+
   it("creates and edits a draft while preserving service-controlled fields", async () => {
     const { app } = service({ definitions: [definition()] });
     const created = await app.createDraftRevision({

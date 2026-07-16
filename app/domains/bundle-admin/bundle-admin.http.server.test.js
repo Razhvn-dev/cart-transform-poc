@@ -19,9 +19,13 @@ function serviceStub() {
     cloneActiveRevisionToDraft: vi.fn(() => ({ revision_id: revisionId, status: "draft" })),
     updateDraftRevision: vi.fn(() => ({ revision_id: revisionId, status: "draft" })),
     listRevisionHistory: vi.fn(() => []),
+    listPublicationHistory: vi.fn(() => []),
     validateDraft: vi.fn(() => ({ valid: true, errors: [], warnings: [] })),
     compilePreview: vi.fn(() => ({ valid: true, snapshot_checksum: "1234abcd", snapshot_byte_size: 100 })),
     prepareDraftPublication: vi.fn(() => ({ local_preflight_passed: true, blockers: [] })),
+    publishDraftRevision: vi.fn(() => ({ success: true, publication_id: "21111111-1111-4111-8111-000000000001" })),
+    prepareRevisionRollback: vi.fn(() => ({ local_preflight_passed: true, blockers: [] })),
+    rollbackPublishedRevision: vi.fn(() => ({ success: true, publication_id: "21111111-1111-4111-8111-000000000002" })),
     compareDraftAgainstActive: vi.fn(() => ({ exact: true, differences: [], warnings: [] })),
   };
 }
@@ -190,6 +194,16 @@ describe("Bundle Admin authenticated route handlers", () => {
     expect(service.compilePreview).toHaveBeenCalledWith({ revision_id: revisionId });
   });
 
+  it("returns the read-only publication audit through the authenticated handler", async () => {
+    const { routes, service } = handlers();
+    const result = await responseBody(await routes.listPublicationHistory({
+      request: request("GET"), params: { bundleDefinitionId: definitionId },
+    }));
+
+    expect(result).toEqual({ status: 200, cacheControl: "no-store", body: { ok: true, data: [] } });
+    expect(service.listPublicationHistory).toHaveBeenCalledWith({ bundle_definition_id: definitionId });
+  });
+
   it("returns the read-only publication readiness DTO through the authenticated handler", async () => {
     const { routes, service } = handlers();
     const result = await responseBody(await routes.prepareDraftPublication({
@@ -198,5 +212,63 @@ describe("Bundle Admin authenticated route handlers", () => {
 
     expect(result).toMatchObject({ status: 200, body: { ok: true, data: { local_preflight_passed: true } } });
     expect(service.prepareDraftPublication).toHaveBeenCalledWith({ revision_id: revisionId });
+  });
+
+  it("passes only the stable publication ID and exact confirmation to the guarded publish command", async () => {
+    const { routes, service } = handlers();
+    const result = await responseBody(await routes.publishDraftRevision({
+      request: request("POST", {
+        publication_id: "21111111-1111-4111-8111-000000000001",
+        confirmation: `PUBLISH:${definitionId}:${revisionId}`,
+      }),
+      params: { revisionId },
+    }));
+
+    expect(result).toMatchObject({ status: 200, body: { ok: true, data: { success: true } } });
+    expect(service.publishDraftRevision).toHaveBeenCalledWith({
+      revision_id: revisionId,
+      publication_id: "21111111-1111-4111-8111-000000000001",
+      confirmation: `PUBLISH:${definitionId}:${revisionId}`,
+    });
+  });
+
+  it("rejects a disabled publish capability without invoking a fallback write", async () => {
+    const service = serviceStub();
+    service.publishDraftRevision.mockImplementation(() => {
+      throw new BundleAdminApplicationError("UNSUPPORTED_CAPABILITY", "publication command is disabled");
+    });
+    const { routes } = handlers({ service });
+    const result = await responseBody(await routes.publishDraftRevision({
+      request: request("POST", {
+        publication_id: "21111111-1111-4111-8111-000000000001",
+        confirmation: `PUBLISH:${definitionId}:${revisionId}`,
+      }),
+      params: { revisionId },
+    }));
+
+    expect(result).toMatchObject({ status: 422, body: { error: { code: "UNSUPPORTED_CAPABILITY" } } });
+  });
+
+  it("passes rollback readiness and exact rollback confirmation through the authenticated handlers", async () => {
+    const { routes, service } = handlers();
+    const readiness = await responseBody(await routes.prepareRevisionRollback({
+      request: request("POST", {}), params: { revisionId },
+    }));
+    const rollback = await responseBody(await routes.rollbackPublishedRevision({
+      request: request("POST", {
+        publication_id: "21111111-1111-4111-8111-000000000002",
+        confirmation: `ROLLBACK:${definitionId}:${revisionId}`,
+      }),
+      params: { revisionId },
+    }));
+
+    expect(readiness).toMatchObject({ status: 200, body: { ok: true, data: { local_preflight_passed: true } } });
+    expect(service.prepareRevisionRollback).toHaveBeenCalledWith({ revision_id: revisionId });
+    expect(rollback).toMatchObject({ status: 200, body: { ok: true, data: { success: true } } });
+    expect(service.rollbackPublishedRevision).toHaveBeenCalledWith({
+      revision_id: revisionId,
+      publication_id: "21111111-1111-4111-8111-000000000002",
+      confirmation: `ROLLBACK:${definitionId}:${revisionId}`,
+    });
   });
 });

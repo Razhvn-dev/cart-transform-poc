@@ -14,6 +14,13 @@ export function createBundleAdminRouteHandlers({ authenticateAdmin, service, get
       input: ({ params }) => ({ bundle_definition_id: requiredParam(params, "bundleDefinitionId") }),
       invoke: (currentService, input) => currentService.getBundleDetail(input),
     }),
+    listPublicationHistory: (args) => execute(args, {
+      method: "GET",
+      authenticateAdmin,
+      getService,
+      input: ({ params }) => ({ bundle_definition_id: requiredParam(params, "bundleDefinitionId") }),
+      invoke: (currentService, input) => currentService.listPublicationHistory(input),
+    }),
     createBundleDefinition: (args) => execute(args, {
       method: "POST",
       authenticateAdmin,
@@ -124,6 +131,41 @@ export function createBundleAdminRouteHandlers({ authenticateAdmin, service, get
       },
       invoke: (currentService, input) => currentService.prepareDraftPublication(input),
     }),
+    publishDraftRevision: (args) => execute(args, {
+      method: "POST",
+      authenticateAdmin,
+      getService,
+      input: async ({ request, params }) => {
+        const body = await jsonBody(request);
+        return {
+          revision_id: requiredParam(params, "revisionId"),
+          publication_id: requiredString(body.publication_id, "publication_id"),
+          confirmation: requiredString(body.confirmation, "confirmation"),
+        };
+      },
+      invoke: (currentService, input) => currentService.publishDraftRevision(input),
+    }),
+    prepareRevisionRollback: (args) => execute(args, {
+      method: "POST",
+      authenticateAdmin,
+      getService,
+      input: ({ params }) => ({ revision_id: requiredParam(params, "revisionId") }),
+      invoke: (currentService, input) => currentService.prepareRevisionRollback(input),
+    }),
+    rollbackPublishedRevision: (args) => execute(args, {
+      method: "POST",
+      authenticateAdmin,
+      getService,
+      input: async ({ request, params }) => {
+        const body = await jsonBody(request);
+        return {
+          revision_id: requiredParam(params, "revisionId"),
+          publication_id: requiredString(body.publication_id, "publication_id"),
+          confirmation: requiredString(body.confirmation, "confirmation"),
+        };
+      },
+      invoke: (currentService, input) => currentService.rollbackPublishedRevision(input),
+    }),
     compareDraftWithActive: (args) => execute(args, {
       method: "POST",
       authenticateAdmin,
@@ -225,7 +267,7 @@ function applicationFailure(error) {
 function applicationFailureDto(dto) {
   if (dto.code === "NOT_FOUND") return failure(404, dto.code, dto.message, dto.details);
   if (dto.code === "CONFLICT" || dto.code === "IMMUTABLE_REVISION") return failure(409, dto.code, dto.message, dto.details);
-  if (dto.code === "VALIDATION_FAILED" || dto.code === "COMPILATION_FAILED") {
+  if (["VALIDATION_FAILED", "COMPILATION_FAILED", "UNSUPPORTED_CAPABILITY"].includes(dto.code)) {
     return failure(422, dto.code, dto.message, dto.details);
   }
   if (dto.code === "PERSISTENCE_FAILED") {

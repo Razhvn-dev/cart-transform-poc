@@ -28,6 +28,7 @@ export function createBundleAdminService({
   persistence,
   repository,
   publicationService,
+  rollbackService = null,
   publicationDriver = null,
   publicationEnabled = false,
   resolvePromotionEvidence = null,
@@ -52,7 +53,13 @@ export function createBundleAdminService({
     async getBundleDetail({ bundle_definition_id: bundleDefinitionId }) {
       const definition = await readDefinition(persistence, bundleDefinitionId);
       const revisions = await listRevisions(repository, bundleDefinitionId);
-      return toBundleDetail(definition, revisions);
+      return {
+        ...toBundleDetail(definition, revisions),
+        publication: {
+          enabled: publicationEnabled,
+          requires_server_evidence: true,
+        },
+      };
     },
 
     async createBundleDefinition({ bundle_definition_id: bundleDefinitionId = idFactory(), slug, parent_binding: parentBinding, created_by }) {
@@ -182,6 +189,18 @@ export function createBundleAdminService({
       return (await listRevisions(repository, bundleDefinitionId))
         .sort((left, right) => right.revision_number - left.revision_number)
         .map(toRevisionSummary);
+    },
+
+    async listPublicationHistory({ bundle_definition_id: bundleDefinitionId }) {
+      try {
+        await readDefinition(persistence, bundleDefinitionId);
+        const records = await repository.listPublicationRecordsByDefinition(bundleDefinitionId);
+        return records
+          .map(toPublicationSummary)
+          .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+      } catch (error) {
+        throw normalizeApplicationError(error);
+      }
     },
 
     async validateDraft({ revision_id: revisionId }) {
@@ -317,6 +336,87 @@ export function createBundleAdminService({
         at: now(),
       }, publicationDriver);
     },
+
+    async prepareRevisionRollback({ revision_id: revisionId }) {
+      const revision = await readRevision(persistence, revisionId);
+      if (revision.status !== "superseded") {
+        throw new BundleAdminApplicationError("CONFLICT", "only a superseded revision may be prepared for rollback");
+      }
+      const definition = await readDefinition(persistence, revision.bundle_definition_id);
+      const revisions = await listRevisions(repository, revision.bundle_definition_id);
+      const active = revisions.find((candidate) => candidate.revision_id === definition.active_revision_id);
+      if (active?.status !== "published") {
+        throw new BundleAdminApplicationError("CONFLICT", "rollback requires a published active revision");
+      }
+      const preview = compilePublicationTarget(revision, compile, sizeGuard);
+      const blockers = preview.valid
+        ? []
+        : preview.errors.map((message) => ({ code: "ROLLBACK_TARGET_NOT_READY", message }));
+      return {
+        target_revision: toRevisionSummary(revision),
+        active_revision: toRevisionSummary(active),
+        local_preflight_passed: blockers.length === 0,
+        blockers,
+        warnings: preview.warnings,
+        snapshot_checksum: preview.snapshot_checksum,
+        snapshot_byte_size: preview.snapshot_byte_size,
+        configuration_version: preview.configuration_version,
+        required_before_rollback: ["runtime_promotion_parity", "explicit_publish_authorization"],
+      };
+    },
+
+    async rollbackPublishedRevision({ revision_id: revisionId, publication_id: publicationId, confirmation }) {
+      if (!publicationEnabled) {
+        throw new BundleAdminApplicationError("UNSUPPORTED_CAPABILITY", "rollback command is disabled");
+      }
+      if (typeof rollbackService !== "function") {
+        throw new BundleAdminApplicationError("UNSUPPORTED_CAPABILITY", "rollback service is unavailable");
+      }
+      if (typeof publicationId !== "string" || publicationId.trim() === "") {
+        throw new BundleAdminApplicationError("VALIDATION_FAILED", "publication_id is required");
+      }
+      const revision = await readRevision(persistence, revisionId);
+      if (confirmation !== rollbackConfirmation(revision.bundle_definition_id, revisionId)) {
+        throw new BundleAdminApplicationError("CONFLICT", "rollback confirmation does not match the target revision");
+      }
+      if (typeof publicationDriver !== "object" || typeof resolvePromotionEvidence !== "function") {
+        throw new BundleAdminApplicationError(
+          "UNSUPPORTED_CAPABILITY",
+          "rollback command requires server-side persistence and promotion evidence",
+        );
+      }
+
+      const preflight = await this.prepareRevisionRollback({ revision_id: revisionId });
+      if (!preflight.local_preflight_passed) {
+        throw new BundleAdminApplicationError("VALIDATION_FAILED", "rollback target did not pass local preflight", preflight);
+      }
+      const definition = await readDefinition(persistence, revision.bundle_definition_id);
+      const revisions = await listRevisions(repository, revision.bundle_definition_id);
+      let promotion;
+      try {
+        promotion = await resolvePromotionEvidence({
+          definition,
+          revision,
+          revisions,
+          snapshot_checksum: preflight.snapshot_checksum,
+        });
+      } catch (error) {
+        throw new BundleAdminApplicationError(
+          "VALIDATION_FAILED",
+          "rollback promotion evidence is unavailable or invalid",
+          { source: "promotion_evidence", reason: error instanceof Error ? error.message : String(error) },
+        );
+      }
+      return rollbackService({
+        publication_id: publicationId,
+        definition,
+        revisions,
+        target_revision_id: revisionId,
+        target_snapshot: compile(revision.configuration),
+        promotion,
+        at: now(),
+      }, publicationDriver);
+    },
   };
 }
 
@@ -331,7 +431,7 @@ function assertDependencies({ persistence, repository, publicationService, idFac
       throw new BundleAdminApplicationError("UNSUPPORTED_CAPABILITY", `persistence adapter is missing ${method}`);
     }
   }
-  for (const method of ["listBundleDefinitions", "listRevisionsByDefinition"]) {
+  for (const method of ["listBundleDefinitions", "listRevisionsByDefinition", "listPublicationRecordsByDefinition"]) {
     if (typeof repository?.[method] !== "function") {
       throw new BundleAdminApplicationError("UNSUPPORTED_CAPABILITY", `query repository is missing ${method}`);
     }
@@ -380,6 +480,38 @@ function normalizeDraftConfiguration(configuration, definition, revisionNumber) 
 
 function publicationConfirmation(bundleDefinitionId, revisionId) {
   return `PUBLISH:${bundleDefinitionId}:${revisionId}`;
+}
+
+function rollbackConfirmation(bundleDefinitionId, revisionId) {
+  return `ROLLBACK:${bundleDefinitionId}:${revisionId}`;
+}
+
+function compilePublicationTarget(revision, compile, sizeGuard) {
+  const errors = validateBundleRevision(revision);
+  if (errors.length > 0) {
+    return {
+      valid: false,
+      errors,
+      warnings: [],
+      snapshot_checksum: null,
+      snapshot_byte_size: null,
+      configuration_version: revision.revision_number,
+    };
+  }
+  try {
+    const snapshot = compile(revision.configuration);
+    const size = sizeGuard({ jsonValue: snapshot });
+    return {
+      valid: size.ok,
+      errors: size.ok ? [] : [size.reason],
+      warnings: size.warning ? [size.warning] : [],
+      snapshot_checksum: snapshot.checksum,
+      snapshot_byte_size: size.sizeBytes,
+      configuration_version: snapshot.configuration_version,
+    };
+  } catch (error) {
+    throw normalizeApplicationError(error, "COMPILATION_FAILED");
+  }
 }
 
 function sameParentBinding(left, right) {
@@ -468,6 +600,30 @@ function toRevisionSummary(revision) {
     updated_at: revision.updated_at,
     created_by: revision.created_by,
     runtime_snapshot_ref: revision.runtime_snapshot_ref ? structuredClone(revision.runtime_snapshot_ref) : null,
+  };
+}
+
+function toPublicationSummary(record) {
+  const attempt = record?.publication_attempt;
+  if (!attempt || typeof attempt.publication_id !== "string" || typeof attempt.revision_id !== "string") {
+    throw new BundleAdminApplicationError("PERSISTENCE_FAILED", "publication audit record is malformed");
+  }
+  const result = record?.result ?? {};
+  return {
+    publication_id: attempt.publication_id,
+    revision_id: attempt.revision_id,
+    revision_number: attempt.revision_number,
+    state: attempt.state,
+    created_at: attempt.created_at,
+    updated_at: attempt.updated_at,
+    success: result.success === true,
+    completed_steps: Array.isArray(result.completed_steps) ? structuredClone(result.completed_steps) : [],
+    failed_step: result.failed_step ?? null,
+    compensation: result.compensation ? structuredClone(result.compensation) : null,
+    previous_active_revision_id: result.previous_active_revision_id ?? attempt.previous_active_revision_id ?? null,
+    active_revision_id: result.active_revision_id ?? null,
+    snapshot_checksum: result.snapshot_checksum ?? attempt.runtime_snapshot_ref?.checksum ?? null,
+    warnings: Array.isArray(result.warnings) ? structuredClone(result.warnings) : [],
   };
 }
 

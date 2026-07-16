@@ -129,6 +129,10 @@ export function createDevShopifyPersistenceAdapter({ execute, appClientId, bindi
     async readPublicationById(publicationId) {
       return readOptionalDocument(graphql, bindings.metaobjectTypes.publicationRecord, publicationId, bindings);
     },
+    async listPublicationRecordsByDefinition(bundleDefinitionId) {
+      const records = await listDocuments(graphql, bindings.metaobjectTypes.publicationRecord, bindings);
+      return records.filter((record) => record?.publication_attempt?.bundle_definition_id === bundleDefinitionId);
+    },
     async restorePreviousSnapshot(input) {
       assertSnapshotCasInput(input);
       if (input.previous_snapshot === null) {

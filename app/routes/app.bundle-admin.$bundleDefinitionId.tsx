@@ -6,10 +6,12 @@ import {
   Box,
   Button,
   Card,
+  Checkbox,
   Divider,
   InlineStack,
   Layout,
   Page,
+  Select,
   Text,
   TextField,
 } from "@shopify/polaris";
@@ -19,8 +21,10 @@ import {
   formatTimestamp,
   getDraftEditorHydrationKey,
   getEnvelopeError,
+  getStructuredConfigurationEntities,
   isPersistedDraftConfiguration,
   parseConfigurationDocument,
+  updateStructuredConfiguration,
   type BundleAdminEnvelope,
   type RevisionSummary,
 } from "../domains/bundle-admin/bundle-admin.ui-state";
@@ -40,7 +44,28 @@ type Revision = RevisionSummary & {
   created_by: string;
 };
 
-type BundleDetail = { definition: BundleDefinition; revisions: Revision[] };
+type PublicationCapability = { enabled: boolean; requires_server_evidence: boolean };
+type PublicationSummary = {
+  publication_id: string;
+  revision_id: string;
+  revision_number: number;
+  state: string;
+  created_at: string;
+  updated_at: string;
+  success: boolean;
+  completed_steps: string[];
+  failed_step: string | null;
+  compensation: Record<string, unknown> | null;
+  previous_active_revision_id: string | null;
+  active_revision_id: string | null;
+  snapshot_checksum: string | null;
+  warnings: string[];
+};
+type BundleDetail = {
+  definition: BundleDefinition;
+  revisions: Revision[];
+  publication?: PublicationCapability;
+};
 type CommandResult = Record<string, unknown>;
 type PendingDetailRefresh = {
   successMessage: string;
@@ -54,21 +79,30 @@ export default function BundleAdminDetailPage() {
   const shopify = useAppBridge();
   const detailFetcher = useFetcher<BundleAdminEnvelope<BundleDetail>>();
   const commandFetcher = useFetcher<BundleAdminEnvelope<CommandResult>>();
+  const publicationHistoryFetcher = useFetcher<BundleAdminEnvelope<PublicationSummary[]>>();
   const [slug, setSlug] = useState("");
   const [productGid, setProductGid] = useState("");
   const [variantGid, setVariantGid] = useState("");
   const [configurationText, setConfigurationText] = useState("");
+  const [selectedGroupKey, setSelectedGroupKey] = useState("");
+  const [selectedOptionKey, setSelectedOptionKey] = useState("");
+  const [selectedPresetId, setSelectedPresetId] = useState("");
+  const [selectedRuleId, setSelectedRuleId] = useState("");
   const [clientError, setClientError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [validation, setValidation] = useState<CommandResult | null>(null);
   const [preview, setPreview] = useState<CommandResult | null>(null);
   const [publicationReadiness, setPublicationReadiness] = useState<CommandResult | null>(null);
+  const [publication, setPublication] = useState<CommandResult | null>(null);
+  const [publicationConfirmation, setPublicationConfirmation] = useState("");
   const [comparison, setComparison] = useState<CommandResult | null>(null);
   const [pendingOperation, setPendingOperation] = useState<string | null>(null);
   const hydratedRevision = useRef<string | null>(null);
   const handledResponse = useRef<unknown>(null);
   const pendingDetailRefresh = useRef<PendingDetailRefresh | null>(null);
   const pendingDraftSave = useRef<{ revisionId: string; configuration: Record<string, unknown> } | null>(null);
+  const publicationId = useRef<string | null>(null);
+  const publicationHistoryLoadedFor = useRef<string | null>(null);
 
   useEffect(() => {
     if (bundleDefinitionId && !detailFetcher.data && detailFetcher.state === "idle") {
@@ -90,6 +124,16 @@ export default function BundleAdminDetailPage() {
   const detail = detailFetcher.data?.ok ? detailFetcher.data.data : null;
   const draft = findLatestDraft(detail?.revisions ?? []);
   const parentBindingLocked = (detail?.revisions.length ?? 0) > 0;
+  const publicationHistory = publicationHistoryFetcher.data?.ok ? publicationHistoryFetcher.data.data : null;
+  const parsedStructuredConfiguration = parseConfigurationDocument(configurationText);
+  const structuredEntities = parsedStructuredConfiguration.value
+    ? getStructuredConfigurationEntities(parsedStructuredConfiguration.value)
+    : { groups: [], presets: [], compatibilityRules: [] };
+  const selectedGroup = structuredEntities.groups.find((group) => group.group_key === selectedGroupKey) ?? structuredEntities.groups[0] ?? null;
+  const selectedOptions = asObjectArray(selectedGroup?.options);
+  const selectedOption = selectedOptions.find((option) => option.option_key === selectedOptionKey) ?? selectedOptions[0] ?? null;
+  const selectedPreset = structuredEntities.presets.find((preset) => preset.preset_id === selectedPresetId) ?? structuredEntities.presets[0] ?? null;
+  const selectedRule = structuredEntities.compatibilityRules.find((rule) => rule.rule_id === selectedRuleId) ?? structuredEntities.compatibilityRules[0] ?? null;
 
   useEffect(() => {
     if (!detail) return;
@@ -101,6 +145,21 @@ export default function BundleAdminDetailPage() {
     setVariantGid(detail.definition.parent_binding.variant_gid);
     setConfigurationText(draft?.configuration ? JSON.stringify(draft.configuration, null, 2) : "");
   }, [detail, draft]);
+
+  useEffect(() => {
+    if (!parsedStructuredConfiguration.value) return;
+    if (selectedGroup && selectedGroup.group_key !== selectedGroupKey) setSelectedGroupKey(stringValue(selectedGroup.group_key));
+    if (selectedOption && selectedOption.option_key !== selectedOptionKey) setSelectedOptionKey(stringValue(selectedOption.option_key));
+    if (selectedPreset && selectedPreset.preset_id !== selectedPresetId) setSelectedPresetId(stringValue(selectedPreset.preset_id));
+    if (selectedRule && selectedRule.rule_id !== selectedRuleId) setSelectedRuleId(stringValue(selectedRule.rule_id));
+  }, [parsedStructuredConfiguration.value, selectedGroup, selectedGroupKey, selectedOption, selectedOptionKey, selectedPreset, selectedPresetId, selectedRule, selectedRuleId]);
+
+  useEffect(() => {
+    const definitionId = detail?.definition.bundle_definition_id;
+    if (!definitionId || publicationHistoryLoadedFor.current === definitionId || publicationHistoryFetcher.state !== "idle") return;
+    publicationHistoryLoadedFor.current = definitionId;
+    publicationHistoryFetcher.load(`/app/bundle-admin/bundles/${definitionId}/publications`);
+  }, [detail?.definition.bundle_definition_id, publicationHistoryFetcher]);
 
   useEffect(() => {
     const pending = pendingDetailRefresh.current;
@@ -138,8 +197,10 @@ export default function BundleAdminDetailPage() {
     if (pendingOperation === "validate") setValidation(response.data);
     if (pendingOperation === "preview") setPreview(response.data);
     if (pendingOperation === "publish-readiness") setPublicationReadiness(response.data);
+    if (pendingOperation === "publish") setPublication(response.data);
     if (pendingOperation === "compare") setComparison(response.data);
-    if (["save-definition", "create-draft", "clone-draft", "save-draft"].includes(pendingOperation ?? "")) {
+    if (["save-definition", "create-draft", "clone-draft", "save-draft", "publish"].includes(pendingOperation ?? "")) {
+      if (pendingOperation === "publish") publicationHistoryLoadedFor.current = null;
       const expectedDraft = pendingOperation === "save-draft" ? pendingDraftSave.current : undefined;
       pendingDraftSave.current = null;
       refreshDetail({
@@ -156,6 +217,7 @@ export default function BundleAdminDetailPage() {
   const requestInFlight = commandFetcher.state !== "idle";
   const detailError = getEnvelopeError(detailFetcher.data);
   const commandError = getEnvelopeError(commandFetcher.data);
+  const publicationHistoryError = getEnvelopeError(publicationHistoryFetcher.data);
 
   function submit(operation: string, action: string, method: "POST" | "PUT", body: Record<string, unknown>) {
     if (operation !== "save-draft") pendingDraftSave.current = null;
@@ -176,6 +238,38 @@ export default function BundleAdminDetailPage() {
       return null;
     }
     return parsed.value;
+  }
+
+  function applyStructuredEdit(
+    section: "groups" | "options" | "presets" | "compatibility_rules",
+    entityKey: string,
+    patch: Record<string, unknown>,
+    groupKey?: string,
+  ) {
+    const configuration = readConfiguration();
+    if (!configuration) return;
+    const result = updateStructuredConfiguration(configuration, section, { entityKey, groupKey }, patch);
+    if (result.error || !result.value) {
+      setClientError(result.error ?? "Unable to update the configuration section.");
+      return;
+    }
+    setClientError(null);
+    setConfigurationText(JSON.stringify(result.value, null, 2));
+  }
+
+  function applyIntegerEdit(
+    section: "groups" | "options" | "presets" | "compatibility_rules",
+    entityKey: string,
+    field: string,
+    value: string,
+    groupKey?: string,
+  ) {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed)) {
+      setClientError(`${field} must be an integer.`);
+      return;
+    }
+    applyStructuredEdit(section, entityKey, { [field]: parsed }, groupKey);
   }
 
   function saveDefinition() {
@@ -209,6 +303,20 @@ export default function BundleAdminDetailPage() {
   function runDraftCommand(operation: "validate" | "preview" | "publish-readiness" | "compare", suffix: string) {
     if (!draft) return;
     submit(operation, `/app/bundle-admin/revisions/${draft.revision_id}/${suffix}`, "POST", {});
+  }
+
+  function publishDraft() {
+    if (!draft || !detail) return;
+    const confirmation = `PUBLISH:${detail.definition.bundle_definition_id}:${draft.revision_id}`;
+    if (publicationConfirmation !== confirmation) {
+      setClientError("Publication confirmation does not match the current draft.");
+      return;
+    }
+    publicationId.current ??= globalThis.crypto.randomUUID();
+    submit("publish", `/app/bundle-admin/revisions/${draft.revision_id}/publish`, "POST", {
+      publication_id: publicationId.current,
+      confirmation,
+    });
   }
 
   return (
@@ -284,6 +392,30 @@ export default function BundleAdminDetailPage() {
             </Card>
 
             <Card>
+              <BlockStack gap="300">
+                <InlineStack align="space-between" blockAlign="center">
+                  <Text as="h2" variant="headingMd">Publication audit</Text>
+                  <Text as="span" tone="subdued">Read-only</Text>
+                </InlineStack>
+                {publicationHistoryFetcher.state !== "idle" && !publicationHistory ? <Text as="p" tone="subdued">Loading publication records...</Text> : null}
+                {publicationHistoryError ? <InlineError title={publicationHistoryError.code} message={publicationHistoryError.message} /> : null}
+                {publicationHistory && publicationHistory.length === 0 ? <Text as="p" tone="subdued">No publication attempts have been recorded.</Text> : null}
+                {publicationHistory?.map((record) => (
+                  <Box key={record.publication_id} paddingBlock="200" borderBlockEndWidth="025" borderColor="border">
+                    <InlineStack align="space-between" blockAlign="center" gap="200">
+                      <BlockStack gap="050">
+                        <Text as="span" variant="bodyMd">Revision {record.revision_number} publication</Text>
+                        <Text as="span" variant="bodySm" tone="subdued">{record.publication_id} 路 {formatTimestamp(record.updated_at)}</Text>
+                        {record.failed_step ? <Text as="span" tone="critical">Failed at {record.failed_step}</Text> : null}
+                      </BlockStack>
+                      <Badge tone={record.success ? "success" : "critical"}>{record.success ? "succeeded" : "failed"}</Badge>
+                    </InlineStack>
+                  </Box>
+                ))}
+              </BlockStack>
+            </Card>
+
+            <Card>
               <BlockStack gap="400">
                 <InlineStack align="space-between" blockAlign="center">
                   <BlockStack gap="050">
@@ -302,6 +434,56 @@ export default function BundleAdminDetailPage() {
                   disabled={requestInFlight}
                   placeholder='{"schema_version":"bundle_config.v1"}'
                 />
+                <Divider />
+                <BlockStack gap="300">
+                  <Text as="h3" variant="headingMd">Structured draft editor</Text>
+                  <Text as="p" tone="subdued">Use these controlled fields for common configuration changes. Entity IDs and advanced rule conditions remain available through the JSON editor.</Text>
+                  {parsedStructuredConfiguration.error ? <InlineError title="Structured editing unavailable" message={parsedStructuredConfiguration.error} /> : null}
+                  {!parsedStructuredConfiguration.error && structuredEntities.groups.length === 0 ? <Text as="p" tone="subdued">No component groups are available in this configuration.</Text> : null}
+                  {selectedGroup ? <BlockStack gap="200">
+                    <Text as="h4" variant="headingSm">Groups</Text>
+                    <Select label="Component group" options={structuredEntities.groups.map((group) => ({ label: `${stringValue(group.label) || stringValue(group.group_key)} (${stringValue(group.group_key)})`, value: stringValue(group.group_key) }))} value={stringValue(selectedGroup.group_key)} onChange={setSelectedGroupKey} disabled={requestInFlight} />
+                    <InlineStack gap="200" wrap>
+                      <TextField label="Group label" value={stringValue(selectedGroup.label)} onChange={(value) => applyStructuredEdit("groups", stringValue(selectedGroup.group_key), { label: value })} autoComplete="off" disabled={requestInFlight} />
+                      <TextField label="Display order" type="number" value={numberValue(selectedGroup.display_order)} onChange={(value) => applyIntegerEdit("groups", stringValue(selectedGroup.group_key), "display_order", value)} autoComplete="off" disabled={requestInFlight} />
+                      <TextField label="Minimum selections" type="number" value={numberValue(selectedGroup.min)} onChange={(value) => applyIntegerEdit("groups", stringValue(selectedGroup.group_key), "min", value)} autoComplete="off" disabled={requestInFlight} />
+                      <TextField label="Maximum selections" type="number" value={numberValue(selectedGroup.max)} onChange={(value) => applyIntegerEdit("groups", stringValue(selectedGroup.group_key), "max", value)} autoComplete="off" disabled={requestInFlight} />
+                    </InlineStack>
+                    <Checkbox label="Required group" checked={booleanValue(selectedGroup.required)} onChange={(checked) => applyStructuredEdit("groups", stringValue(selectedGroup.group_key), { required: checked })} disabled={requestInFlight} />
+                  </BlockStack> : null}
+                  {selectedGroup && selectedOption ? <BlockStack gap="200">
+                    <Text as="h4" variant="headingSm">Options</Text>
+                    <Select label="Option" options={selectedOptions.map((option) => ({ label: `${stringValue(option.label) || stringValue(option.option_key)} (${stringValue(option.option_key)})`, value: stringValue(option.option_key) }))} value={stringValue(selectedOption.option_key)} onChange={setSelectedOptionKey} disabled={requestInFlight} />
+                    <InlineStack gap="200" wrap>
+                      <TextField label="Option label" value={stringValue(selectedOption.label)} onChange={(value) => applyStructuredEdit("options", stringValue(selectedOption.option_key), { label: value }, stringValue(selectedGroup.group_key))} autoComplete="off" disabled={requestInFlight} />
+                      <TextField label="Sort order" type="number" value={numberValue(selectedOption.sort_order)} onChange={(value) => applyIntegerEdit("options", stringValue(selectedOption.option_key), "sort_order", value, stringValue(selectedGroup.group_key))} autoComplete="off" disabled={requestInFlight} />
+                      <TextField label="Price cents snapshot" type="number" value={numberValue(selectedOption.price_cents_snapshot)} onChange={(value) => applyIntegerEdit("options", stringValue(selectedOption.option_key), "price_cents_snapshot", value, stringValue(selectedGroup.group_key))} autoComplete="off" disabled={requestInFlight} />
+                    </InlineStack>
+                    <Checkbox label="Option active" checked={booleanValue(selectedOption.active)} onChange={(checked) => applyStructuredEdit("options", stringValue(selectedOption.option_key), { active: checked }, stringValue(selectedGroup.group_key))} disabled={requestInFlight} />
+                  </BlockStack> : null}
+                  {selectedPreset ? <BlockStack gap="200">
+                    <Text as="h4" variant="headingSm">Presets</Text>
+                    <Select label="Preset" options={structuredEntities.presets.map((preset) => ({ label: `${stringValue(preset.label) || stringValue(preset.preset_id)} (${stringValue(preset.preset_id)})`, value: stringValue(preset.preset_id) }))} value={stringValue(selectedPreset.preset_id)} onChange={setSelectedPresetId} disabled={requestInFlight} />
+                    <InlineStack gap="200" wrap>
+                      <TextField label="Preset label" value={stringValue(selectedPreset.label)} onChange={(value) => applyStructuredEdit("presets", stringValue(selectedPreset.preset_id), { label: value })} autoComplete="off" disabled={requestInFlight} />
+                      <TextField label="Display order" type="number" value={numberValue(selectedPreset.display_order)} onChange={(value) => applyIntegerEdit("presets", stringValue(selectedPreset.preset_id), "display_order", value)} autoComplete="off" disabled={requestInFlight} />
+                    </InlineStack>
+                    <InlineStack gap="400" wrap>
+                      <Checkbox label="Preset active" checked={booleanValue(selectedPreset.active)} onChange={(checked) => applyStructuredEdit("presets", stringValue(selectedPreset.preset_id), { active: checked })} disabled={requestInFlight} />
+                      <Checkbox label="Validate compatibility" checked={booleanValue(selectedPreset.validate_compatibility)} onChange={(checked) => applyStructuredEdit("presets", stringValue(selectedPreset.preset_id), { validate_compatibility: checked })} disabled={requestInFlight} />
+                    </InlineStack>
+                  </BlockStack> : null}
+                  {selectedRule ? <BlockStack gap="200">
+                    <Text as="h4" variant="headingSm">Compatibility rules</Text>
+                    <Select label="Rule" options={structuredEntities.compatibilityRules.map((rule) => ({ label: stringValue(rule.rule_id), value: stringValue(rule.rule_id) }))} value={stringValue(selectedRule.rule_id)} onChange={setSelectedRuleId} disabled={requestInFlight} />
+                    <InlineStack gap="200" wrap>
+                      <TextField label="Priority" type="number" value={numberValue(selectedRule.priority)} onChange={(value) => applyIntegerEdit("compatibility_rules", stringValue(selectedRule.rule_id), "priority", value)} autoComplete="off" disabled={requestInFlight} />
+                      <Select label="Status" options={["draft", "active", "archived"].map((value) => ({ label: value, value }))} value={stringValue(selectedRule.status)} onChange={(value) => applyStructuredEdit("compatibility_rules", stringValue(selectedRule.rule_id), { status: value })} disabled={requestInFlight} />
+                      <Select label="Effect" options={["allow", "deny", "requires", "excludes", "visibility", "fallback"].map((value) => ({ label: value, value }))} value={stringValue(selectedRule.effect)} onChange={(value) => applyStructuredEdit("compatibility_rules", stringValue(selectedRule.rule_id), { effect: value })} disabled={requestInFlight} />
+                      <Select label="Match" options={["all", "any"].map((value) => ({ label: value, value }))} value={stringValue(selectedRule.match)} onChange={(value) => applyStructuredEdit("compatibility_rules", stringValue(selectedRule.rule_id), { match: value })} disabled={requestInFlight} />
+                    </InlineStack>
+                  </BlockStack> : null}
+                </BlockStack>
                 <InlineStack gap="200" align="end">
                   {draft ? <Button variant="primary" onClick={saveDraft} loading={requestInFlight}>Save draft</Button> : <Button variant="primary" onClick={createDraft} loading={requestInFlight}>Create draft</Button>}
                   <Button onClick={() => runDraftCommand("validate", "validate")} disabled={!draft || requestInFlight}>Validate</Button>
@@ -317,6 +499,33 @@ export default function BundleAdminDetailPage() {
                 <ResultPanel title="Validation result" result={validation} empty="Run validation on the current draft to see configuration errors." />
                 <ResultPanel title="Compile preview" result={preview} empty="Compile preview reports checksum, byte size, counts, and size gates without publishing." />
                 <ResultPanel title="Publish readiness" result={publicationReadiness} empty="Check the saved draft's local prerequisites. This does not publish or write Runtime Snapshot data." />
+                {detail.publication?.enabled && draft ? (
+                  <Card>
+                    <BlockStack gap="300">
+                      <Text as="h2" variant="headingMd">Publish draft</Text>
+                      <Text as="p" tone="subdued">{`PUBLISH:${detail.definition.bundle_definition_id}:${draft.revision_id}`}</Text>
+                      <TextField
+                        label="Publish confirmation"
+                        value={publicationConfirmation}
+                        onChange={setPublicationConfirmation}
+                        autoComplete="off"
+                        disabled={requestInFlight}
+                      />
+                      <InlineStack align="end">
+                        <Button
+                          variant="primary"
+                          tone="critical"
+                          onClick={publishDraft}
+                          loading={requestInFlight}
+                          disabled={requestInFlight || publicationReadiness?.local_preflight_passed !== true}
+                        >
+                          Publish draft
+                        </Button>
+                      </InlineStack>
+                    </BlockStack>
+                  </Card>
+                ) : null}
+                {detail.publication?.enabled ? <ResultPanel title="Publication result" result={publication} empty="Publication requires a passing readiness check and explicit confirmation." /> : null}
               </Layout.Section>
               <Layout.Section variant="oneThird">
                 <ResultPanel title="Active revision diff" result={comparison ?? (preview?.diff_from_active as CommandResult | undefined) ?? null} empty="Compare the draft against the active revision to inspect structural differences." compact />
@@ -327,6 +536,24 @@ export default function BundleAdminDetailPage() {
       </BlockStack>
     </Page>
   );
+}
+
+function asObjectArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((candidate): candidate is Record<string, unknown> => Boolean(candidate) && typeof candidate === "object" && !Array.isArray(candidate))
+    : [];
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+}
+
+function booleanValue(value: unknown) {
+  return value === true;
 }
 
 function RevisionState({ label, revision, tone }: { label: string; revision: Revision | null; tone: "success" | "attention" }) {

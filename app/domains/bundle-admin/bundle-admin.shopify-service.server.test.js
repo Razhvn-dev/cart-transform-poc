@@ -121,6 +121,37 @@ describe("Bundle Admin Shopify dev persistence composition", () => {
       .rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
+  it("keeps Shopify publication disabled unless both server-side controls are configured", async () => {
+    const transport = createTransport();
+    const app = service(transport);
+    await app.createBundleDefinition(definitionInput());
+    await app.createDraftRevision({
+      bundle_definition_id: definitionId,
+      revision_id: revisionId,
+      configuration: config(),
+      created_by: "test.myshopify.com",
+    });
+
+    await expect(app.publishDraftRevision({
+      revision_id: revisionId,
+      publication_id: "21111111-1111-4111-8111-000000000001",
+      confirmation: `PUBLISH:${definitionId}:${revisionId}`,
+    })).rejects.toMatchObject({ code: "UNSUPPORTED_CAPABILITY" });
+    expect(transport.calls.some((call) => call.query.includes("MetafieldsSet"))).toBe(false);
+  });
+
+  it("reads publication audit records only from the canonical development Metaobject type", async () => {
+    const transport = createTransport();
+    const app = service(transport);
+    await app.createBundleDefinition(definitionInput());
+
+    await expect(app.listPublicationHistory({ bundle_definition_id: definitionId })).resolves.toEqual([]);
+    expect(transport.calls.some((call) => (
+      call.query.includes("BundlePersistenceMetaobjects")
+      && call.variables.type === "$app:aces_bundle_publication_record_dev"
+    ))).toBe(true);
+  });
+
   it("normalizes stale Shopify GraphQL user errors as an application conflict", async () => {
     const transport = createTransport({ staleRevisionUpdate: true });
     const app = service(transport);

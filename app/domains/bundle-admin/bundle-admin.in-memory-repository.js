@@ -20,6 +20,11 @@ export function createInMemoryBundleAdminRepository({ persistence }) {
         .filter((revision) => revision.bundle_definition_id === bundleDefinitionId)
         .map(clone);
     },
+    listPublicationRecordsByDefinition(bundleDefinitionId) {
+      return Array.from(state.publicationStore?.values() ?? [])
+        .filter((record) => record?.publication_attempt?.bundle_definition_id === bundleDefinitionId)
+        .map(clone);
+    },
   };
 }
 

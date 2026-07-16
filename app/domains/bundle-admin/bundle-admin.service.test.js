@@ -59,8 +59,8 @@ function revision({ id = publishedRevisionId, number = 1, status = "published" }
   };
 }
 
-function service({ definitions = [], revisions = [], sizeGuard, compile } = {}) {
-  const persistence = createInMemoryBundlePersistenceAdapter({ definitions, revisions });
+function service({ definitions = [], revisions = [], publications = {}, sizeGuard, compile } = {}) {
+  const persistence = createInMemoryBundlePersistenceAdapter({ definitions, revisions, publications });
   return {
     persistence,
     app: createBundleAdminService({
@@ -243,6 +243,37 @@ describe("bundle admin application service", () => {
     });
   });
 
+  it("prepares a superseded revision for rollback without writing a Snapshot or active pointer", async () => {
+    const superseded = revision({ id: publishedRevisionId, number: 1, status: "superseded" });
+    const active = revision({ id: draftRevisionId, number: 2, status: "published" });
+    const { persistence, app } = service({
+      definitions: [definition(draftRevisionId)],
+      revisions: [superseded, active],
+    });
+
+    await expect(app.prepareRevisionRollback({ revision_id: publishedRevisionId })).resolves.toMatchObject({
+      target_revision: { revision_id: publishedRevisionId, status: "superseded" },
+      active_revision: { revision_id: draftRevisionId, status: "published" },
+      local_preflight_passed: true,
+      snapshot_checksum: expect.stringMatching(/^[0-9a-f]{8}$/),
+    });
+    expect(persistence.state.calls).not.toContain("writeRuntimeSnapshot");
+    expect(persistence.state.calls).not.toContain("compareAndSetActiveRevision");
+  });
+
+  it("keeps rollback disabled unless the server composition explicitly enables it", async () => {
+    const { app } = service();
+
+    await expectApplicationError(
+      () => app.rollbackPublishedRevision({
+        revision_id: publishedRevisionId,
+        publication_id: "21111111-1111-4111-8111-000000000001",
+        confirmation: `ROLLBACK:${definitionId}:${publishedRevisionId}`,
+      }),
+      "UNSUPPORTED_CAPABILITY",
+    );
+  });
+
   it("keeps the publication command disabled unless an explicit server composition enables it", async () => {
     const draft = revision({ id: draftRevisionId, number: 2, status: "draft" });
     const { app } = service({ definitions: [definition(publishedRevisionId)], revisions: [revision(), draft] });
@@ -395,6 +426,49 @@ describe("bundle admin application service", () => {
       active_revision_id: publishedRevisionId,
       exact: false,
     });
+  });
+
+  it("returns a read-only, newest-first publication audit without exposing stored domain content", async () => {
+    const olderPublicationId = "21111111-1111-4111-8111-000000000001";
+    const newerPublicationId = "21111111-1111-4111-8111-000000000002";
+    const publication = ({ publicationId, updatedAt, success, failedStep = null }) => ({
+      publication_attempt: {
+        publication_id: publicationId,
+        bundle_definition_id: definitionId,
+        revision_id: publishedRevisionId,
+        revision_number: 1,
+        state: "recorded",
+        runtime_snapshot_ref: { checksum: "1234abcd" },
+        previous_active_revision_id: null,
+        created_at: createdAt,
+        updated_at: updatedAt,
+      },
+      result: {
+        success,
+        completed_steps: success ? ["normalized_validated", "publication_recorded"] : ["normalized_validated"],
+        failed_step: failedStep,
+        compensation: success ? null : { success: true, completed_steps: ["snapshot_restored"] },
+        active_revision_id: success ? publishedRevisionId : null,
+        snapshot_checksum: "1234abcd",
+        warnings: success ? [] : ["compensated"],
+      },
+      domain: { definitions: [{ secret_configuration: "must-not-be-returned" }] },
+    });
+    const { app } = service({
+      definitions: [definition(publishedRevisionId)],
+      revisions: [revision()],
+      publications: {
+        [olderPublicationId]: publication({ publicationId: olderPublicationId, updatedAt: "2026-07-15T01:00:00Z", success: true }),
+        [newerPublicationId]: publication({ publicationId: newerPublicationId, updatedAt: "2026-07-15T02:00:00Z", success: false, failedStep: "audit_record" }),
+      },
+    });
+
+    await expect(app.listPublicationHistory({ bundle_definition_id: definitionId })).resolves.toEqual([
+      expect.objectContaining({ publication_id: newerPublicationId, success: false, failed_step: "audit_record" }),
+      expect.objectContaining({ publication_id: olderPublicationId, success: true, failed_step: null }),
+    ]);
+    const history = await app.listPublicationHistory({ bundle_definition_id: definitionId });
+    expect(history[0]).not.toHaveProperty("domain");
   });
 
   it("normalizes not-found and conflict errors and rejects cart instance IDs", async () => {

@@ -95,6 +95,12 @@ export function createInMemoryBundlePersistenceAdapter({
       calls.push("readPublicationById");
       return clone(publicationStore.get(publicationId) ?? null);
     },
+    listPublicationRecordsByDefinition(bundleDefinitionId) {
+      calls.push("listPublicationRecordsByDefinition");
+      return Array.from(publicationStore.values())
+        .filter((record) => record?.publication_attempt?.bundle_definition_id === bundleDefinitionId)
+        .map(clone);
+    },
     restorePreviousSnapshot(input) {
       calls.push("restorePreviousSnapshot");
       assertSnapshotCasInput(input);

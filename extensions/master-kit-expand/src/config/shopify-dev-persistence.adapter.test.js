@@ -109,6 +109,25 @@ describe("development Shopify persistence adapter", () => {
     expect(calls[0].variables.type).toBe("$app:aces_bundle_publication_record_dev");
   });
 
+  it("rejects a Metaobject create when Shopify cannot read the written document back", async () => {
+    const target = { ...definition, revision_id: "new" };
+    const execute = async (query, { variables }) => {
+      if (query.includes("BundlePersistenceMetaobjectCreate")) {
+        return { data: { metaobjectCreate: { metaobject: { fields: [{ key: "document", jsonValue: target }] }, userErrors: [] } } };
+      }
+      if (query.includes("BundlePersistenceMetaobject($type")) {
+        return { data: { metaobjectByHandle: null } };
+      }
+      throw new Error(`unexpected Shopify operation: ${variables.type}`);
+    };
+    const adapter = createDevShopifyPersistenceAdapter({ execute, appClientId: DEV_SHOPIFY_APP_CLIENT_ID });
+
+    await expect(adapter.writeRevision({ revision: target })).rejects.toMatchObject({
+      code: "READ_BACK_FAILED",
+      details: expect.objectContaining({ source: "read_back", handle: "new" }),
+    });
+  });
+
   it("rejects a Metaobject update when Shopify cannot read the written document back", async () => {
     const existing = { ...definition, revision_id: "old" };
     const target = { ...definition, revision_id: "new" };

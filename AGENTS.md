@@ -2,11 +2,12 @@
 
 ## Single Source of Truth
 
-- Before every task, read the full `Project Master Context V5.2 Final`.
-- V5.2 is the current locked absolute SSOT.
+- Before every task, read the full `Project_Master_Context_V5.3_Current_Baseline.md`.
+- V5.3 is the current locked absolute SSOT. Its local Word export is `Project_Master_Context_V5.3_Current_Baseline.docx` and is intentionally ignored by Git.
+- `Project Master Context V5.2 Final` remains an immutable historical baseline; do not modify it.
 - Do not rely on historical chat records.
 - If repository facts conflict with old reports, trust the current code, tests, and SSOT.
-- Do not modify V5.2. Future architecture updates belong in a future V5.3 or newer SSOT.
+- Future architecture updates belong in a V5.4 or newer SSOT.
 
 ## Communication Rules
 
@@ -18,11 +19,11 @@
 
 ## Current Baseline
 
-- Current phase: Production Architecture Baseline.
+- Current phase: Bundle Admin local persistence hardening within the Production Architecture Baseline.
 - Current runtime authority: hard-coded Cart Transform Shared Core.
-- Runtime Snapshot: shadow validation only.
-- Next planned target: Phase 3.2 Runtime Snapshot Authority Migration.
-- Do not switch runtime authority without Huang's explicit approval.
+- Runtime Snapshot: production remains hard-coded; dev candidate promotion code is implemented and previously validated, but deployed Function state must be confirmed before Function work.
+- Next planned target: finish the local Bundle Admin persistence batch, then perform one explicitly approved dev release and live persistence verification.
+- Do not switch production runtime authority without Huang's explicit approval.
 
 ## Environment Rules
 

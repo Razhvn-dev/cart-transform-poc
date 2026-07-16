@@ -1,13 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DEV_SHOPIFY_APP_CLIENT_ID, createDevShopifyBundleAdminService } from "./bundle-admin.shopify-service.server.js";
+import { createBundleAdminRouteHandlers } from "./bundle-admin.http.server.js";
 import { masterKitConfigV1 } from "../../../extensions/master-kit-expand/src/config/fixtures/master-kit-config.v1.js";
 
 const definitionId = "f6cf6c74-90a6-4f15-9e4f-2dbeb2fc4b89";
 const revisionId = "1b9b0e1d-0f9f-4ea4-8bb4-1f2dc1aef702";
 
-function createTransport({ staleRevisionUpdate = false } = {}) {
+function createTransport({ staleRevisionUpdate = false, staleReadAfterRevisionUpdate = false } = {}) {
   const documents = new Map();
   let stale = staleRevisionUpdate;
+  let staleReadDocument = null;
   const calls = [];
   const admin = {
     async graphql(query, { variables }) {
@@ -19,7 +21,9 @@ function createTransport({ staleRevisionUpdate = false } = {}) {
       }
       if (query.includes("BundlePersistenceMetaobject($type")) {
         const entry = documents.get(key(variables.type, variables.handle));
-        return { data: { metaobjectByHandle: entry ? { id: entry.id, fields: fields(entry.document) } : null } };
+        const document = staleReadDocument ?? entry?.document;
+        staleReadDocument = null;
+        return { data: { metaobjectByHandle: entry ? { id: entry.id, fields: fields(document) } : null } };
       }
       if (query.includes("BundlePersistenceMetaobjectCreate")) {
         const input = variables.metaobject;
@@ -34,7 +38,9 @@ function createTransport({ staleRevisionUpdate = false } = {}) {
           return { data: { metaobjectUpdate: { metaobject: null, userErrors: [{ code: "STALE_OBJECT", message: "stale object" }] } } };
         }
         const entry = [...documents.values()].find((candidate) => candidate.id === variables.id);
+        const previousDocument = entry.document;
         entry.document = JSON.parse(variables.metaobject.fields[0].value);
+        if (staleReadAfterRevisionUpdate) staleReadDocument = previousDocument;
         return { data: { metaobjectUpdate: { metaobject: { id: entry.id, fields: fields(entry.document) }, userErrors: [] } } };
       }
       throw new Error("unexpected Shopify operation");
@@ -130,6 +136,67 @@ describe("Bundle Admin Shopify dev persistence composition", () => {
       configuration: config(),
       updated_by: "test.myshopify.com",
     })).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("rejects an apparent draft update when the durable read-back still returns the old document", async () => {
+    const transport = createTransport({ staleReadAfterRevisionUpdate: true });
+    const app = service(transport);
+    await app.createBundleDefinition(definitionInput());
+    await app.createDraftRevision({
+      bundle_definition_id: definitionId,
+      revision_id: revisionId,
+      configuration: config(),
+      created_by: "test.myshopify.com",
+    });
+    const edited = config();
+    edited.internal_name = "Must be durably confirmed";
+
+    await expect(app.updateDraftRevision({
+      revision_id: revisionId,
+      configuration: edited,
+      updated_by: "test.myshopify.com",
+    })).rejects.toMatchObject({
+      code: "PERSISTENCE_FAILED",
+      details: expect.objectContaining({ source: "read_back", handle: revisionId }),
+    });
+  });
+
+  it("returns PERSISTENCE_FAILED from the authenticated route when read-back is stale", async () => {
+    const transport = createTransport({ staleReadAfterRevisionUpdate: true });
+    const app = service(transport);
+    await app.createBundleDefinition(definitionInput());
+    await app.createDraftRevision({
+      bundle_definition_id: definitionId,
+      revision_id: revisionId,
+      configuration: config(),
+      created_by: "test.myshopify.com",
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const routes = createBundleAdminRouteHandlers({
+      authenticateAdmin: async () => ({ session: { shop: "test.myshopify.com" } }),
+      getService: () => app,
+    });
+    const edited = config();
+    edited.internal_name = "Must not report a stale save as success";
+
+    const response = await routes.updateDraftRevision({
+      request: new Request("https://example.test/app/bundle-admin/revisions/test", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ configuration: edited }),
+      }),
+      params: { revisionId },
+    });
+    errorSpy.mockRestore();
+
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "PERSISTENCE_FAILED",
+        details: { source: "read_back", handle: revisionId },
+      },
+    });
+    expect(response.status).toBe(500);
   });
 });
 

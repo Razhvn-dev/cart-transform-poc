@@ -46,3 +46,6 @@ tmp-theme-pull/
 temp-*.gql
 *.png
 *.docx
+
+# Retained local-only Phase 4.4D probes; one contains an intentional stale-CAS mutation.
+/scripts/.phase-4-4d-*.graphql

@@ -245,7 +245,15 @@ async function createDocument(graphql, type, handle, document, bindings) {
     metaobject: { type, handle, fields: [documentField(bindings, document)] },
   });
   assertUserErrors(data.metaobjectCreate?.userErrors, "WRITE_FAILED");
-  return documentFromFields(data.metaobjectCreate?.metaobject?.fields, bindings.documentFieldKey, "Metaobject document");
+  const mutationDocument = documentFromFields(
+    data.metaobjectCreate?.metaobject?.fields,
+    bindings.documentFieldKey,
+    "Metaobject create response",
+  );
+  assertDocumentMatches(document, mutationDocument, { type, handle, source: "mutation_response" });
+  const readBack = await readOptionalDocument(graphql, type, handle, bindings);
+  assertDocumentMatches(document, readBack, { type, handle, source: "read_back" });
+  return readBack;
 }
 
 async function readProductMetafield(graphql, productId, key, bindings) {

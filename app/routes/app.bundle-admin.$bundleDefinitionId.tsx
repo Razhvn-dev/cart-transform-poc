@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFetcher, useNavigate, useParams } from "@remix-run/react";
 import {
   Badge,
@@ -18,6 +18,7 @@ import {
   findLatestDraft,
   formatTimestamp,
   getEnvelopeError,
+  isPersistedDraftConfiguration,
   parseConfigurationDocument,
   type BundleAdminEnvelope,
   type RevisionSummary,
@@ -40,6 +41,11 @@ type Revision = RevisionSummary & {
 
 type BundleDetail = { definition: BundleDefinition; revisions: Revision[] };
 type CommandResult = Record<string, unknown>;
+type PendingDetailRefresh = {
+  successMessage: string;
+  showToast: boolean;
+  expectedDraft?: { revisionId: string; configuration: Record<string, unknown> };
+};
 
 export default function BundleAdminDetailPage() {
   const { bundleDefinitionId } = useParams();
@@ -59,11 +65,24 @@ export default function BundleAdminDetailPage() {
   const [pendingOperation, setPendingOperation] = useState<string | null>(null);
   const hydratedRevision = useRef<string | null>(null);
   const handledResponse = useRef<unknown>(null);
+  const pendingDetailRefresh = useRef<PendingDetailRefresh | null>(null);
+  const pendingDraftSave = useRef<{ revisionId: string; configuration: Record<string, unknown> } | null>(null);
 
   useEffect(() => {
     if (bundleDefinitionId && !detailFetcher.data && detailFetcher.state === "idle") {
       detailFetcher.load(`/app/bundle-admin/bundles/${bundleDefinitionId}`);
     }
+  }, [bundleDefinitionId, detailFetcher]);
+
+  const refreshDetail = useCallback((pending: PendingDetailRefresh = {
+    successMessage: "Bundle detail has been refreshed.",
+    showToast: false,
+  }) => {
+    if (!bundleDefinitionId) return;
+    setClientError(null);
+    setNotice(null);
+    pendingDetailRefresh.current = pending;
+    detailFetcher.load(`/app/bundle-admin/bundles/${bundleDefinitionId}`);
   }, [bundleDefinitionId, detailFetcher]);
 
   const detail = detailFetcher.data?.ok ? detailFetcher.data.data : null;
@@ -82,10 +101,33 @@ export default function BundleAdminDetailPage() {
   }, [detail, draft]);
 
   useEffect(() => {
+    const pending = pendingDetailRefresh.current;
+    if (!pending || detailFetcher.state !== "idle" || !detailFetcher.data) return;
+    pendingDetailRefresh.current = null;
+    if (!detailFetcher.data.ok) {
+      setNotice(null);
+      setClientError(`${detailFetcher.data.error.code}: ${detailFetcher.data.error.message}`);
+      return;
+    }
+    if (pending.expectedDraft && !isPersistedDraftConfiguration(
+      detailFetcher.data.data.revisions,
+      pending.expectedDraft.revisionId,
+      pending.expectedDraft.configuration,
+    )) {
+      setNotice(null);
+      setClientError("PERSISTENCE_FAILED: Shopify did not confirm the saved draft after refresh.");
+      return;
+    }
+    setNotice(pending.successMessage);
+    if (pending.showToast) shopify.toast.show("Bundle Admin updated");
+  }, [detailFetcher.data, detailFetcher.state, shopify]);
+
+  useEffect(() => {
     if (commandFetcher.state !== "idle" || !commandFetcher.data || handledResponse.current === commandFetcher.data) return;
     handledResponse.current = commandFetcher.data;
     const response = commandFetcher.data;
     if (!response.ok) {
+      pendingDraftSave.current = null;
       setNotice(null);
       setClientError(`${response.error.code}: ${response.error.message}`);
       return;
@@ -95,19 +137,25 @@ export default function BundleAdminDetailPage() {
     if (pendingOperation === "preview") setPreview(response.data);
     if (pendingOperation === "compare") setComparison(response.data);
     if (["save-definition", "create-draft", "clone-draft", "save-draft"].includes(pendingOperation ?? "")) {
-      setNotice("Saved. The bundle detail has been refreshed.");
-      if (bundleDefinitionId) detailFetcher.load(`/app/bundle-admin/bundles/${bundleDefinitionId}`);
+      const expectedDraft = pendingOperation === "save-draft" ? pendingDraftSave.current : undefined;
+      pendingDraftSave.current = null;
+      refreshDetail({
+        successMessage: "Saved. The bundle detail has been refreshed.",
+        showToast: true,
+        expectedDraft,
+      });
     } else if (pendingOperation) {
       setNotice("Command completed.");
+      shopify.toast.show("Bundle Admin updated");
     }
-    shopify.toast.show("Bundle Admin updated");
-  }, [bundleDefinitionId, commandFetcher.data, commandFetcher.state, detailFetcher, pendingOperation, shopify]);
+  }, [commandFetcher.data, commandFetcher.state, pendingOperation, refreshDetail, shopify]);
 
   const requestInFlight = commandFetcher.state !== "idle";
   const detailError = getEnvelopeError(detailFetcher.data);
   const commandError = getEnvelopeError(commandFetcher.data);
 
   function submit(operation: string, action: string, method: "POST" | "PUT", body: Record<string, unknown>) {
+    if (operation !== "save-draft") pendingDraftSave.current = null;
     setClientError(null);
     setNotice(null);
     setPendingOperation(operation);
@@ -151,6 +199,7 @@ export default function BundleAdminDetailPage() {
     if (!draft) return;
     const configuration = readConfiguration();
     if (!configuration) return;
+    pendingDraftSave.current = { revisionId: draft.revision_id, configuration };
     submit("save-draft", `/app/bundle-admin/revisions/${draft.revision_id}`, "PUT", { configuration });
   }
 
@@ -163,7 +212,12 @@ export default function BundleAdminDetailPage() {
     <Page
       backAction={{ content: "Bundles", onAction: () => navigate("/app/bundle-admin") }}
       title={detail?.definition.slug ?? "Bundle detail"}
-      secondaryActions={[{ content: "Refresh", onAction: () => bundleDefinitionId && detailFetcher.load(`/app/bundle-admin/bundles/${bundleDefinitionId}`) }]}
+      secondaryActions={[{
+        content: detailFetcher.state === "idle" ? "Refresh" : "Refreshing...",
+        onAction: () => refreshDetail(),
+        loading: detailFetcher.state !== "idle",
+        disabled: detailFetcher.state !== "idle",
+      }]}
     >
       <TitleBar title={detail?.definition.slug ?? "Bundle detail"} />
       <BlockStack gap="400">

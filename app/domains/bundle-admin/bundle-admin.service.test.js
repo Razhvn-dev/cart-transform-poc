@@ -115,6 +115,41 @@ describe("bundle admin application service", () => {
     expect(updated.revisions.find((item) => item.revision_id === draftRevisionId)).toHaveProperty("configuration");
   });
 
+  it("rejects a parent binding change after revisions exist", async () => {
+    const { app } = service({ definitions: [definition(publishedRevisionId)], revisions: [revision()] });
+
+    await expectApplicationError(
+      () => app.updateBundleDefinition({
+        bundle_definition_id: definitionId,
+        slug: "aces-master-kit",
+        parent_binding: {
+          product_gid: "gid://shopify/Product/999",
+          variant_gid: "gid://shopify/ProductVariant/999",
+        },
+        updated_by: "editor",
+      }),
+      "CONFLICT",
+    );
+  });
+
+  it("allows correcting a parent binding before the first revision", async () => {
+    const { app } = service({ definitions: [definition()] });
+    const updated = await app.updateBundleDefinition({
+      bundle_definition_id: definitionId,
+      slug: "aces-master-kit",
+      parent_binding: {
+        product_gid: "gid://shopify/Product/999",
+        variant_gid: "gid://shopify/ProductVariant/999",
+      },
+      updated_by: "editor",
+    });
+
+    expect(updated.definition.parent_binding).toEqual({
+      product_gid: "gid://shopify/Product/999",
+      variant_gid: "gid://shopify/ProductVariant/999",
+    });
+  });
+
   it("creates and edits a draft while preserving service-controlled fields", async () => {
     const { app } = service({ definitions: [definition()] });
     const created = await app.createDraftRevision({

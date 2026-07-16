@@ -82,11 +82,18 @@ export function createBundleAdminService({
       try {
         const existing = await readDefinition(persistence, bundleDefinitionId);
         const definitions = await repository.listBundleDefinitions();
+        const revisions = await listRevisions(repository, bundleDefinitionId);
         if (definitions.some((definition) => (
           definition.bundle_definition_id !== bundleDefinitionId
           && definition.parent_binding.variant_gid === parentBinding?.variant_gid
         ))) {
           throw new BundleAdminApplicationError("CONFLICT", "parent variant is already bound to another bundle definition");
+        }
+        if (revisions.length > 0 && !sameParentBinding(existing.parent_binding, parentBinding)) {
+          throw new BundleAdminApplicationError(
+            "CONFLICT",
+            "parent binding is immutable after the first revision; create a new bundle definition for a different parent variant",
+          );
         }
         const definition = parseBundleDefinition({
           ...existing,
@@ -95,7 +102,7 @@ export function createBundleAdminService({
           updated_at: now(),
         });
         await persistence.writeBundleDefinition({ definition, updated_by });
-        return toBundleDetail(definition, await listRevisions(repository, bundleDefinitionId));
+        return toBundleDetail(definition, revisions);
       } catch (error) {
         throw normalizeApplicationError(error);
       }
@@ -290,6 +297,10 @@ function normalizeDraftConfiguration(configuration, definition, revisionNumber) 
     published_revision: Math.max(1, normalized.revision?.published_revision ?? revisionNumber),
   };
   return normalized;
+}
+
+function sameParentBinding(left, right) {
+  return left?.product_gid === right?.product_gid && left?.variant_gid === right?.variant_gid;
 }
 
 async function compareRevisionWithActive(persistence, repository, draft) {

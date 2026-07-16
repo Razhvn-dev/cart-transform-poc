@@ -68,6 +68,7 @@ export default function BundleAdminDetailPage() {
 
   const detail = detailFetcher.data?.ok ? detailFetcher.data.data : null;
   const draft = findLatestDraft(detail?.revisions ?? []);
+  const parentBindingLocked = (detail?.revisions.length ?? 0) > 0;
 
   useEffect(() => {
     if (!detail) return;
@@ -182,8 +183,8 @@ export default function BundleAdminDetailPage() {
                       <Badge tone="info">Development persistence</Badge>
                     </InlineStack>
                     <TextField label="Slug" value={slug} onChange={setSlug} autoComplete="off" disabled={requestInFlight} />
-                    <TextField label="Parent product GID" value={productGid} onChange={setProductGid} autoComplete="off" disabled={requestInFlight} />
-                    <TextField label="Parent variant GID" value={variantGid} onChange={setVariantGid} autoComplete="off" disabled={requestInFlight} />
+                    <TextField label="Parent product GID" value={productGid} onChange={setProductGid} autoComplete="off" disabled={requestInFlight || parentBindingLocked} helpText={parentBindingLocked ? "Parent binding is locked after the first revision." : undefined} />
+                    <TextField label="Parent variant GID" value={variantGid} onChange={setVariantGid} autoComplete="off" disabled={requestInFlight || parentBindingLocked} helpText={parentBindingLocked ? "Parent binding is locked after the first revision." : undefined} />
                     <InlineStack align="space-between" blockAlign="center">
                       <Text as="span" variant="bodySm" tone="subdued">Updated {formatTimestamp(detail.definition.updated_at)}</Text>
                       <Button variant="primary" onClick={saveDefinition} loading={requestInFlight}>Save definition</Button>

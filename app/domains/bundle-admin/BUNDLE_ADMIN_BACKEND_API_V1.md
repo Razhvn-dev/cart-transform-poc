@@ -1,6 +1,6 @@
 # Bundle Admin Backend API V1
 
-This local application layer has authenticated headless Remix resource routes. React UI remains intentionally out of scope.
+This application layer has authenticated Remix resource routes consumed by the embedded Bundle Admin UI. Route handlers remain thin and delegate all domain behavior to this service layer.
 
 ## Dependencies
 
@@ -37,6 +37,7 @@ Supported codes: `NOT_FOUND`, `CONFLICT`, `VALIDATION_FAILED`, `IMMUTABLE_REVISI
 ## Edit and Preview Rules
 
 - `bundle_definition_id` is service-controlled and stable.
+- A definition's parent product/variant binding may be corrected only before its first revision exists. Once any revision exists, the binding is immutable so revision configuration, Snapshot storage ownership, and the active pointer cannot diverge. Create a new BundleDefinition for a different parent variant.
 - `_bundle_id` and `bundle_id` are rejected anywhere in editable persistence input.
 - Only `draft` revisions can be updated, validated, compiled, or compared.
 - The service sets configuration ID, version, status, and revision fields. A caller cannot promote or assign a Runtime Snapshot.

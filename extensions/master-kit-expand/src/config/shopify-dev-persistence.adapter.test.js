@@ -70,6 +70,39 @@ describe("development Shopify persistence adapter", () => {
       .toHaveLength(2);
   });
 
+  it("reads every Metaobject page instead of silently truncating the list at 250 records", async () => {
+    const calls = [];
+    const execute = async (query, { variables }) => {
+      calls.push({ query, variables });
+      if (!query.includes("BundlePersistenceMetaobjects")) throw new Error("unexpected Shopify operation");
+      if (variables.after === null) {
+        return {
+          data: {
+            metaobjects: {
+              nodes: [{ fields: [{ key: "document", jsonValue: definition }] }],
+              pageInfo: { hasNextPage: true, endCursor: "cursor-1" },
+            },
+          },
+        };
+      }
+      return {
+        data: {
+          metaobjects: {
+            nodes: [{ fields: [{ key: "document", jsonValue: { ...definition, bundle_definition_id: "second" } }] }],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+        },
+      };
+    };
+    const adapter = createDevShopifyPersistenceAdapter({ execute, appClientId: DEV_SHOPIFY_APP_CLIENT_ID });
+
+    await expect(adapter.listBundleDefinitions()).resolves.toEqual([
+      definition,
+      { ...definition, bundle_definition_id: "second" },
+    ]);
+    expect(calls.map((call) => call.variables.after)).toEqual([null, "cursor-1"]);
+  });
+
   it("uses the canonical app-owned PublicationRecord type", async () => {
     const { adapter, calls } = createAdapter();
     await expect(adapter.readPublicationById("2b9b0e1d-0f9f-4ea4-8bb4-1f2dc1aef703")).resolves.toEqual(definition);

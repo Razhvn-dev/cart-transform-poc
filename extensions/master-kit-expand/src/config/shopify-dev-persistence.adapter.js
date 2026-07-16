@@ -191,10 +191,23 @@ async function readOptionalDocument(graphql, type, handle, bindings) {
 }
 
 async function listDocuments(graphql, type, bindings) {
-  const data = await graphql(METAOBJECT_LIST_QUERY, { type, first: 250 });
-  return (data.metaobjects?.nodes ?? []).map((node) =>
-    documentFromFields(node.fields, bindings.documentFieldKey, "Metaobject document"),
-  );
+  const documents = [];
+  let after = null;
+
+  do {
+    const data = await graphql(METAOBJECT_LIST_QUERY, { type, first: 250, after });
+    documents.push(...(data.metaobjects?.nodes ?? []).map((node) =>
+      documentFromFields(node.fields, bindings.documentFieldKey, "Metaobject document"),
+    ));
+    const pageInfo = data.metaobjects?.pageInfo;
+    if (!pageInfo?.hasNextPage) break;
+    if (!pageInfo.endCursor) {
+      throw new BundlePersistenceError("READ_BACK_FAILED", "Shopify metaobject list returned a page without an end cursor");
+    }
+    after = pageInfo.endCursor;
+  } while (after);
+
+  return documents;
 }
 
 async function upsertDocument(graphql, type, handle, document, bindings) {
@@ -294,9 +307,10 @@ const METAOBJECT_CREATE_MUTATION = `#graphql
   }`;
 
 const METAOBJECT_LIST_QUERY = `#graphql
-  query BundlePersistenceMetaobjects($type: String!, $first: Int!) {
-    metaobjects(type: $type, first: $first) {
+  query BundlePersistenceMetaobjects($type: String!, $first: Int!, $after: String) {
+    metaobjects(type: $type, first: $first, after: $after) {
       nodes { fields { key value jsonValue } }
+      pageInfo { hasNextPage endCursor }
     }
   }`;
 

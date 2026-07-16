@@ -147,6 +147,29 @@ describe("Bundle Admin authenticated route handlers", () => {
     expect(result).toMatchObject({ status: 422, body: { error: { code: "VALIDATION_FAILED" } } });
   });
 
+  it("reports unconfirmed Shopify writes without exposing an unexpected internal error", async () => {
+    const service = serviceStub();
+    service.updateDraftRevision.mockImplementation(() => {
+      throw new BundleAdminApplicationError(
+        "PERSISTENCE_FAILED",
+        "Shopify did not confirm the persisted Metaobject document",
+        { resource_type: "$app:aces_bundle_revision_dev", handle: revisionId, source: "read_back" },
+      );
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { routes } = handlers({ service });
+    const result = await responseBody(await routes.updateDraftRevision({
+      request: request("PUT", { configuration: {} }),
+      params: { revisionId },
+    }));
+    errorSpy.mockRestore();
+
+    expect(result).toMatchObject({
+      status: 500,
+      body: { error: { code: "PERSISTENCE_FAILED", details: { source: "read_back" } } },
+    });
+  });
+
   it("maps unexpected service failures to 500", async () => {
     const service = serviceStub();
     service.listBundles.mockImplementation(() => { throw new Error("unexpected"); });

@@ -218,9 +218,26 @@ async function upsertDocument(graphql, type, handle, document, bindings) {
       metaobject: { fields: [documentField(bindings, document)] },
     });
     assertUserErrors(updated.metaobjectUpdate?.userErrors, "WRITE_FAILED");
-    return documentFromFields(updated.metaobjectUpdate?.metaobject?.fields, bindings.documentFieldKey, "Metaobject document");
+    const mutationDocument = documentFromFields(
+      updated.metaobjectUpdate?.metaobject?.fields,
+      bindings.documentFieldKey,
+      "Metaobject update response",
+    );
+    assertDocumentMatches(document, mutationDocument, { type, handle, source: "mutation_response" });
+    const readBack = await readOptionalDocument(graphql, type, handle, bindings);
+    assertDocumentMatches(document, readBack, { type, handle, source: "read_back" });
+    return readBack;
   }
   return createDocument(graphql, type, handle, document, bindings);
+}
+
+function assertDocumentMatches(expected, actual, { type, handle, source }) {
+  if (actual !== null && stableJson(actual) === stableJson(expected)) return;
+  throw new BundlePersistenceError(
+    "READ_BACK_FAILED",
+    "Shopify did not confirm the persisted Metaobject document",
+    { resource_type: type, handle, source },
+  );
 }
 
 async function createDocument(graphql, type, handle, document, bindings) {

@@ -218,6 +218,14 @@ function applicationFailureDto(dto) {
   if (dto.code === "VALIDATION_FAILED" || dto.code === "COMPILATION_FAILED") {
     return failure(422, dto.code, dto.message, dto.details);
   }
+  if (dto.code === "PERSISTENCE_FAILED") {
+    console.error("Bundle Admin persistence failure", {
+      code: dto.code,
+      message: dto.message,
+      details: dto.details ?? null,
+    });
+    return failure(500, dto.code, "Shopify persistence did not confirm the draft save", dto.details);
+  }
   return failure(500, "INTERNAL_ERROR", "unexpected Bundle Admin server error");
 }
 

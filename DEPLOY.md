@@ -1,173 +1,120 @@
 # Development and Release Workflow
 
-This project uses a two-mode workflow. The root `AGENTS.md` is the mandatory authority for AI agents; this file mirrors the same workflow for human operators.
+This document is the operator-facing release policy. `AGENTS.md` and the
+current Project Master Context remain the engineering authority.
 
-## What Huang Needs To Say
+## Mode A: local development
 
-For local work:
+Use Mode A for feature work, local validation, and embedded Admin preview.
+The expected instruction is:
 
-> 按项目工作流继续开发这个功能，完成后只做本地验证和商店预览，不要发布。
+> Continue local development and validation only. Do not release.
 
-For release:
+Run:
 
-> 这个功能已经确认通过，按项目工作流正式发布。
+```powershell
+npm run validate:local
+npm run dev:local
+```
 
-## Mode A - Local Development
+Mode A does not commit, push, update Devbox, publish Sealos, deploy Shopify app
+configuration, or modify Shopify store data. Stop the local preview with
+`Ctrl+C` when testing is complete.
 
-Use this mode for all feature work unless Huang explicitly approves a stable release.
+## Mode B: approved development release
 
-Trigger phrases include:
+Use Mode B only after the feature has passed local validation and Huang has
+explicitly approved a development release:
 
-- 本地开发
-- 本地验证
-- 先看效果
-- 不要发布
-- local preview
-- local validation
+> This feature passed validation. Release it to the development environment.
 
-Required behavior:
+The release sequence is:
 
-1. Modify code locally.
-2. Run validation:
-
-   ```powershell
-   npm run validate:local
-   ```
-
-3. Start local Shopify preview only when Huang asks for store preview:
-
-   ```powershell
-   npm run dev:local
-   ```
-
-4. Open/test the feature in the Shopify development store.
-5. Report the preview URL and verification result.
-6. Stop and wait for Huang's approval.
-
-Do not commit, push, update DevBox, publish Sealos, run stable Shopify deployment, update Shopify stable URLs, or modify Shopify store data in Mode A.
-
-## Mode B - Stable Release
-
-Use this mode only after Huang explicitly says the feature has passed and is approved for release.
-
-Trigger phrases include:
-
-- 正式发布
-- 发布到稳定环境
-- 已确认通过
-- stable release
-- release approved
-
-Required behavior:
-
-1. Confirm the feature already passed Mode A local validation.
-2. Run final validation:
-
-   ```powershell
-   npm run validate:stable
-   ```
-
-3. Commit approved changes with an intentional message.
-4. Push to GitHub.
-5. Update the DevBox repository from GitHub.
-6. Build the project in DevBox.
-7. Publish a new DevBox version.
-8. Redeploy/update the Sealos Application.
-9. Deploy Shopify app configuration/extensions using the stable dev config:
+1. Run `npm run validate:stable` locally.
+2. Commit only the reviewed files and push the approved commit to `origin/main`.
+3. In Devbox, pull that exact commit and run `npm run build`.
+4. Publish a new Devbox version and update the Sealos application.
+5. Verify the embedded Admin app from Sealos.
+6. If the batch changes Shopify Functions or the Theme App Extension, deploy
+   those extensions separately using the explicitly approved development config:
 
    ```powershell
    npm run deploy:dev
    ```
 
-10. Verify the Shopify Admin app loads from Sealos.
-11. Verify Standard and Advanced cart/checkout flows.
-12. Report commit, GitHub push, Sealos version, Shopify app version, and smoke-test results.
+7. Run the required browser and Cart -> Checkout regression checks.
 
-## Exact NPM Commands
+App-server release, Shopify Function deployment, and Theme App Extension
+deployment are separate operations. Restarting an old process does not rebuild
+Remix output.
 
-Local preview:
-
-```powershell
-npm run dev:local
-```
-
-Stable Shopify deployment:
+## Local commands
 
 ```powershell
-npm run deploy:dev
-```
-
-Validation:
-
-```powershell
+npm test
 npm run lint
 npm run build
 npm run test:function
-npm run build:function
-```
-
-Combined validation:
-
-```powershell
 npm run validate:local
-npm run validate:stable
+npm run assert:function:production-clean
 ```
 
-## Runtime Notes
+`npm run dev:local` uses `shopify.app.local.toml`, the development store, the
+production Function profile, and the Shopify CLI localhost preview. It is a
+local Admin preview, not a Shopify deployment.
 
-- Package manager: npm.
-- Build command: `npm run build`.
-- Production start command: `npm run docker-start`.
-- Remix server command: `remix-serve ./build/server/index.js`.
-- Container port: `3000`.
-- Keep Shopify Functions and Theme App Extension deployment separate from the web container release process unless Mode B is explicitly approved.
+## Devbox/Sealos runtime
 
-`npm run docker-start` runs:
+The current Devbox process starts the checked-out source tree:
 
-```powershell
-npm run setup && npm run start
+```bash
+cd ~/project/cart-transform-poc
+npm run build
+exec npm run docker-start
 ```
 
-`npm run setup` runs Prisma generation and migrations:
+`npm run docker-start` runs Prisma setup and then starts the already-built
+Remix server; it does not run `npm run build`. The exact pull/build/release
+steps are in
+[`docs/SEALOS_DEVBOX_RELEASE_WORKFLOW.md`](./docs/SEALOS_DEVBOX_RELEASE_WORKFLOW.md).
 
-```powershell
-prisma generate && prisma migrate deploy
-```
+## Development environment
 
-## Sealos Environment Variables
-
-Do not change Sealos environment variables during Mode A.
-
-Required values for the Sealos Application are managed outside this document:
+Authorized target:
 
 ```text
-NODE_ENV=production
-PORT=3000
-SHOPIFY_API_KEY=...
-SHOPIFY_API_SECRET=...
-SHOPIFY_APP_URL=https://your-public-sealos-domain.example.com
-SCOPES=write_products,write_cart_transforms,read_cart_transforms
+app:    cart-transform-poc-dev
+store:  huang-mvqquz1p.myshopify.com
+config: shopify.app.dev.toml
 ```
 
-Optional:
+The development app scopes include:
 
 ```text
-SHOP_CUSTOM_DOMAIN=your-shop-custom-domain.example.com
+read_metaobjects
+write_metaobjects
+read_cart_transforms
+write_cart_transforms
+write_products
 ```
 
-## Database Note
+Do not change Sealos environment variables during Mode A. Secrets must remain
+in the deployment environment and must never be committed or pasted into
+issues, chat, screenshots, or logs.
 
-The current Prisma schema uses SQLite:
+## Persistence warning
 
-```prisma
-url = "file:dev.sqlite"
-```
+The Prisma session database is SQLite (`file:dev.sqlite`). Without a persistent
+mount or managed database, sessions can be lost when the container restarts.
+Do not mount an empty volume over `/app/prisma`; that directory also contains
+the schema and migrations. A future long-lived deployment must choose either a
+file mount for the database file or an environment-driven managed database.
 
-Without persistent storage, sessions can be lost when the container restarts.
+## Prohibited without explicit approval
 
-Do not mount an empty volume over `/app/prisma`, because that directory also contains `schema.prisma` and migrations required by `prisma migrate deploy`.
-
-Before a long-lived production deployment, choose one persistence strategy:
-
-- bind-mount only the SQLite database file at `/app/prisma/dev.sqlite`, or
-- migrate Prisma to an environment-driven `DATABASE_URL` and use a managed database.
+- Custom Distribution App `cart-transform-poc`;
+- production Shopify resources or production Function authority;
+- Cart Transform registration recreation;
+- products, prices, inventory, theme, or storefront data;
+- seed scripts and temporary probe mutations;
+- `shopify.app.local.toml`, secrets, caches, and build artifacts in Git.

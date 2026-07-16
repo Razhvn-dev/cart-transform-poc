@@ -271,12 +271,12 @@ describe("bundle admin application service", () => {
       publicationService: publishDraftRevision,
       publicationDriver: publicationDriver.dependencies,
       publicationEnabled: true,
-      resolvePromotionEvidence: async ({ definition: currentDefinition, revision: currentRevision }) => ({
+      resolvePromotionEvidence: async ({ definition: currentDefinition, revision: currentRevision, snapshot_checksum: snapshotChecksum }) => ({
         evidence: {
           schema_version: "bundle_publication_promotion_evidence.v1",
           bundle_definition_id: currentDefinition.bundle_definition_id,
           revision_id: currentRevision.revision_id,
-          snapshot_checksum: compileRuntimeSnapshot(currentRevision.configuration).checksum,
+          snapshot_checksum: snapshotChecksum,
           fixture_set_id: "unit-test",
           fixtures: [{
             fixture_id: "unit-test",
@@ -295,6 +295,36 @@ describe("bundle admin application service", () => {
       confirmation: `PUBLISH:${definitionId}:${draftRevisionId}`,
     })).resolves.toMatchObject({ success: true, active_revision_id: draftRevisionId });
     expect(publicationDriver.state.activeRevisionIds.get(definitionId)).toBe(draftRevisionId);
+  });
+
+  it("fails before publication writes when the server-side evidence provider is unavailable", async () => {
+    const current = revision();
+    const draft = revision({ id: draftRevisionId, number: 2, status: "draft" });
+    const persistence = createInMemoryBundlePersistenceAdapter({ definitions: [definition(publishedRevisionId)], revisions: [current, draft] });
+    const publicationDriver = createInMemoryPublicationDriver({
+      snapshots: { [definitionId]: compileRuntimeSnapshot(current.configuration) },
+      activeRevisionIds: { [definitionId]: publishedRevisionId },
+    });
+    const app = createBundleAdminService({
+      persistence,
+      repository: createInMemoryBundleAdminRepository({ persistence }),
+      publicationService: publishDraftRevision,
+      publicationDriver: publicationDriver.dependencies,
+      publicationEnabled: true,
+      resolvePromotionEvidence: async () => { throw new Error("evidence file is missing"); },
+      now: () => "2026-07-15T01:00:00Z",
+      idFactory: () => draftRevisionId,
+    });
+
+    await expectApplicationError(
+      () => app.publishDraftRevision({
+        revision_id: draftRevisionId,
+        publication_id: "21111111-1111-4111-8111-000000000001",
+        confirmation: `PUBLISH:${definitionId}:${draftRevisionId}`,
+      }),
+      "VALIDATION_FAILED",
+    );
+    expect(publicationDriver.state.calls).not.toContain("write_snapshot");
   });
 
   it("rejects a publication confirmation that names a different draft", async () => {

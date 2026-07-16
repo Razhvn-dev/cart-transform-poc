@@ -21,6 +21,7 @@ function serviceStub() {
     listRevisionHistory: vi.fn(() => []),
     validateDraft: vi.fn(() => ({ valid: true, errors: [], warnings: [] })),
     compilePreview: vi.fn(() => ({ valid: true, snapshot_checksum: "1234abcd", snapshot_byte_size: 100 })),
+    prepareDraftPublication: vi.fn(() => ({ local_preflight_passed: true, blockers: [] })),
     compareDraftAgainstActive: vi.fn(() => ({ exact: true, differences: [], warnings: [] })),
   };
 }
@@ -187,5 +188,15 @@ describe("Bundle Admin authenticated route handlers", () => {
 
     expect(result).toMatchObject({ status: 200, body: { ok: true, data: { snapshot_checksum: "1234abcd" } } });
     expect(service.compilePreview).toHaveBeenCalledWith({ revision_id: revisionId });
+  });
+
+  it("returns the read-only publication readiness DTO through the authenticated handler", async () => {
+    const { routes, service } = handlers();
+    const result = await responseBody(await routes.prepareDraftPublication({
+      request: request("POST", {}), params: { revisionId },
+    }));
+
+    expect(result).toMatchObject({ status: 200, body: { ok: true, data: { local_preflight_passed: true } } });
+    expect(service.prepareDraftPublication).toHaveBeenCalledWith({ revision_id: revisionId });
   });
 });

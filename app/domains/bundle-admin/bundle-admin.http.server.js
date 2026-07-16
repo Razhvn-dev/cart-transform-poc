@@ -114,6 +114,16 @@ export function createBundleAdminRouteHandlers({ authenticateAdmin, service, get
       },
       invoke: (currentService, input) => currentService.compilePreview(input),
     }),
+    prepareDraftPublication: (args) => execute(args, {
+      method: "POST",
+      authenticateAdmin,
+      getService,
+      input: async ({ request, params }) => {
+        await jsonBody(request);
+        return { revision_id: requiredParam(params, "revisionId") };
+      },
+      invoke: (currentService, input) => currentService.prepareDraftPublication(input),
+    }),
     compareDraftWithActive: (args) => execute(args, {
       method: "POST",
       authenticateAdmin,

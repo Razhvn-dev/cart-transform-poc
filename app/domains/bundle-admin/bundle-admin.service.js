@@ -293,7 +293,21 @@ export function createBundleAdminService({
 
       const definition = await readDefinition(persistence, revision.bundle_definition_id);
       const revisions = await listRevisions(repository, revision.bundle_definition_id);
-      const promotion = await resolvePromotionEvidence({ definition, revision, revisions });
+      let promotion;
+      try {
+        promotion = await resolvePromotionEvidence({
+          definition,
+          revision,
+          revisions,
+          snapshot_checksum: preflight.snapshot_checksum,
+        });
+      } catch (error) {
+        throw new BundleAdminApplicationError(
+          "VALIDATION_FAILED",
+          "publication promotion evidence is unavailable or invalid",
+          { source: "promotion_evidence", reason: error instanceof Error ? error.message : String(error) },
+        );
+      }
       return publicationService({
         publication_id: publicationId,
         definition,

@@ -62,6 +62,7 @@ export default function BundleAdminDetailPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [validation, setValidation] = useState<CommandResult | null>(null);
   const [preview, setPreview] = useState<CommandResult | null>(null);
+  const [publicationReadiness, setPublicationReadiness] = useState<CommandResult | null>(null);
   const [comparison, setComparison] = useState<CommandResult | null>(null);
   const [pendingOperation, setPendingOperation] = useState<string | null>(null);
   const hydratedRevision = useRef<string | null>(null);
@@ -136,6 +137,7 @@ export default function BundleAdminDetailPage() {
     setClientError(null);
     if (pendingOperation === "validate") setValidation(response.data);
     if (pendingOperation === "preview") setPreview(response.data);
+    if (pendingOperation === "publish-readiness") setPublicationReadiness(response.data);
     if (pendingOperation === "compare") setComparison(response.data);
     if (["save-definition", "create-draft", "clone-draft", "save-draft"].includes(pendingOperation ?? "")) {
       const expectedDraft = pendingOperation === "save-draft" ? pendingDraftSave.current : undefined;
@@ -204,7 +206,7 @@ export default function BundleAdminDetailPage() {
     submit("save-draft", `/app/bundle-admin/revisions/${draft.revision_id}`, "PUT", { configuration });
   }
 
-  function runDraftCommand(operation: "validate" | "preview" | "compare", suffix: string) {
+  function runDraftCommand(operation: "validate" | "preview" | "publish-readiness" | "compare", suffix: string) {
     if (!draft) return;
     submit(operation, `/app/bundle-admin/revisions/${draft.revision_id}/${suffix}`, "POST", {});
   }
@@ -304,6 +306,7 @@ export default function BundleAdminDetailPage() {
                   {draft ? <Button variant="primary" onClick={saveDraft} loading={requestInFlight}>Save draft</Button> : <Button variant="primary" onClick={createDraft} loading={requestInFlight}>Create draft</Button>}
                   <Button onClick={() => runDraftCommand("validate", "validate")} disabled={!draft || requestInFlight}>Validate</Button>
                   <Button onClick={() => runDraftCommand("preview", "compile-preview")} disabled={!draft || requestInFlight}>Compile preview</Button>
+                  <Button onClick={() => runDraftCommand("publish-readiness", "publish-readiness")} disabled={!draft || requestInFlight}>Check publish readiness</Button>
                   <Button onClick={() => runDraftCommand("compare", "compare-active")} disabled={!draft || requestInFlight}>Compare with active</Button>
                 </InlineStack>
               </BlockStack>
@@ -313,6 +316,7 @@ export default function BundleAdminDetailPage() {
               <Layout.Section>
                 <ResultPanel title="Validation result" result={validation} empty="Run validation on the current draft to see configuration errors." />
                 <ResultPanel title="Compile preview" result={preview} empty="Compile preview reports checksum, byte size, counts, and size gates without publishing." />
+                <ResultPanel title="Publish readiness" result={publicationReadiness} empty="Check the saved draft's local prerequisites. This does not publish or write Runtime Snapshot data." />
               </Layout.Section>
               <Layout.Section variant="oneThird">
                 <ResultPanel title="Active revision diff" result={comparison ?? (preview?.diff_from_active as CommandResult | undefined) ?? null} empty="Compare the draft against the active revision to inspect structural differences." compact />

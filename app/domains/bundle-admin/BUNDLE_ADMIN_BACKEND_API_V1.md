@@ -46,6 +46,7 @@ Supported codes: `NOT_FOUND`, `CONFLICT`, `VALIDATION_FAILED`, `IMMUTABLE_REVISI
 - Preview validates the revision first, then compiles the existing Runtime Snapshot V1 and applies the accepted 7000/7500/9000-byte gate. It returns checksum, byte size, configuration version, component/group/preset/rule counts, warnings/errors, and a complete structural diff against the active revision.
 - `prepareDraftPublication()` only aggregates the existing validation, compile/size, and active-diff evidence. It never calls the injected Publication Service, changes a revision, writes a Snapshot, or switches `active_revision_id`. Its `local_preflight_passed` result is deliberately not a publish authorization: real Function promotion parity and explicit publish authorization remain required.
 - `publishDraftRevision()` is a local application command with a fail-closed default. It requires explicit server composition (`publicationEnabled`), an injected persistence driver, server-side fixture-based promotion evidence bound to the exact `bundle_definition_id`, `revision_id`, and compiled Snapshot checksum, a caller-supplied stable `publication_id`, and `PUBLISH:<bundle_definition_id>:<revision_id>` confirmation. Bare candidate/hard-coded result payloads are rejected. There is no authenticated resource route or Polaris control for it, so it cannot be triggered through the current Admin UI.
+- The server-side evidence provider accepts only a deterministic artifact file named `<bundle_definition_id>.<revision_id>.<snapshot_checksum>.json`, produced by the offline parity generator. The provider validates the artifact again before returning it to the command. It is not configured in the current Shopify or local default composition, so Publish remains disabled even when an artifact exists.
 - Publishing remains out of scope for the deployed Admin UI. The guarded command is retained only for local integration tests until a separate release and live-validation phase authorizes it.
 
 ## Authenticated Resource Routes
@@ -64,6 +65,7 @@ Every route calls the existing Shopify embedded-app `authenticate.admin(request)
 | `PUT` | `/app/bundle-admin/revisions/:revisionId` | `updateDraftRevision` |
 | `POST` | `/app/bundle-admin/revisions/:revisionId/validate` | `validateDraft` |
 | `POST` | `/app/bundle-admin/revisions/:revisionId/compile-preview` | `compilePreview` |
+| `POST` | `/app/bundle-admin/revisions/:revisionId/publish-readiness` | `prepareDraftPublication` |
 | `POST` | `/app/bundle-admin/revisions/:revisionId/compare-active` | `compareDraftAgainstActive` |
 
 Success uses `{ "ok": true, "data": ... }`. Failures use `{ "ok": false, "error": { "code", "message", "details" } }`. Status mapping is `400` malformed input, `401`/`403` authentication failure, `404` not found, `409` conflict or immutable revision, `422` validation or compilation failure, and `500` unexpected server error.

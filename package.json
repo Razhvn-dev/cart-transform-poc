@@ -38,6 +38,7 @@
     "build:function:stage6": "set SHOPIFY_APP_CONFIG=shopify.app.dev.toml&& set FUNCTION_PROFILE=bisect-stage-6&& node scripts/build-function.mjs",
     "build:function:stage7": "set SHOPIFY_APP_CONFIG=shopify.app.dev.toml&& set FUNCTION_PROFILE=bisect-stage-7&& node scripts/build-function.mjs",
     "build:function:stage8": "set SHOPIFY_APP_CONFIG=shopify.app.dev.toml&& set FUNCTION_PROFILE=bisect-stage-8&& node scripts/build-function.mjs",
+    "generate:publication-evidence": "node scripts/generate-publication-promotion-evidence.mjs",
     "assert:function:production-clean": "node scripts/assert-production-function-clean.mjs",
     "assert:function:stage2-clean": "node -e \"import('./scripts/function-profile.mjs').then(({assertStage2CleanArtifacts}) => assertStage2CleanArtifacts())\"",
     "test:function": "npm --workspace extensions/master-kit-expand test",

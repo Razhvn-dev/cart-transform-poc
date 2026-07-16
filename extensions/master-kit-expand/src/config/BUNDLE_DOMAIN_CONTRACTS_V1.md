@@ -88,6 +88,11 @@ fixture set bound to the target BundleDefinition, BundleRevision, and compiled S
 Each fixture must report exact normalized parity and no unsupported fields. Browser clients cannot
 submit bare candidate or hard-coded Function results to satisfy this gate.
 
+`scripts/generate-publication-promotion-evidence.mjs` is the offline release tool that produces
+this evidence. It enumerates every supported option combination (with a fail-closed upper bound),
+executes the hard-coded Shared Core and the Runtime Snapshot candidate, and refuses output on any
+parity difference. It is not an app-server or Function runtime dependency.
+
 Successful publication records are idempotent by `publication_id`. Failures after a Snapshot
 write restore the previous validated Snapshot; failures after a pointer attempt also use a
 compare-and-set restore. A failed compensation is returned explicitly and never represented as

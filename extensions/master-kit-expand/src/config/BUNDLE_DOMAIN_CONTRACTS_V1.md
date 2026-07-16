@@ -76,11 +76,17 @@ model the staged publication flow. This Phase has no Shopify persistence or publ
 
 ## Local Staged Publication Service
 
-`bundle-publication.service.js` is a pure orchestrator. It compiles a draft, runs Runtime
+`bundle-publication.service.js` is an asynchronous pure orchestrator. It compiles a draft, runs Runtime
 Snapshot checksum/size gates and the existing result comparator, then invokes injected
 dependencies for Snapshot writes, read-back, active-pointer compare-and-set, audit recording,
-and compensation. `bundle-publication.in-memory-driver.js` is a test-only simulation of those
-dependencies. Neither module calls Shopify APIs or writes metafields or Metaobjects.
+domain lifecycle persistence, and compensation. `bundle-publication.in-memory-driver.js` is a
+test-only simulation of those dependencies. `bundle-publication.persistence-driver.js` is the
+local adapter bridge for a future guarded command; it has no HTTP or UI entry point.
+
+The parity gate accepts only `bundle_publication_promotion_evidence.v1`: a server-generated
+fixture set bound to the target BundleDefinition, BundleRevision, and compiled Snapshot checksum.
+Each fixture must report exact normalized parity and no unsupported fields. Browser clients cannot
+submit bare candidate or hard-coded Function results to satisfy this gate.
 
 Successful publication records are idempotent by `publication_id`. Failures after a Snapshot
 write restore the previous validated Snapshot; failures after a pointer attempt also use a

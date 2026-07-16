@@ -1,12 +1,30 @@
 import { describe, expect, it } from "vitest";
 import {
   findLatestDraft,
+  getDraftEditorHydrationKey,
   getEnvelopeError,
   isPersistedDraftConfiguration,
   parseConfigurationDocument,
 } from "./bundle-admin.ui-state";
 
 describe("Bundle Admin UI state helpers", () => {
+  it("rehydrates the editor when the current draft changes without changing its ID", () => {
+    const original = getDraftEditorHydrationKey("2026-07-16T00:00:00Z", {
+      revision_id: "revision-1",
+      revision_number: 1,
+      status: "draft",
+      updated_at: "2026-07-16T00:00:00Z",
+    });
+    const saved = getDraftEditorHydrationKey("2026-07-16T00:00:00Z", {
+      revision_id: "revision-1",
+      revision_number: 1,
+      status: "draft",
+      updated_at: "2026-07-16T00:05:00Z",
+    });
+
+    expect(saved).not.toBe(original);
+  });
+
   it("selects the latest draft without considering immutable revisions editable", () => {
     expect(findLatestDraft([
       { revision_id: "published", revision_number: 1, status: "published" },

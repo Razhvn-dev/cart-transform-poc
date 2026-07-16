@@ -47,6 +47,10 @@ export function createInMemoryBundlePersistenceAdapter({
       calls.push("readRuntimeSnapshot");
       return clone(snapshotStore.get(bundleDefinitionId) ?? null);
     },
+    readActiveRevisionId(bundleDefinitionId) {
+      calls.push("readActiveRevisionId");
+      return required(definitionStore, bundleDefinitionId, "BundleDefinition").active_revision_id;
+    },
     writeRuntimeSnapshot(input) {
       calls.push("writeRuntimeSnapshot");
       assertSnapshotCasInput(input);

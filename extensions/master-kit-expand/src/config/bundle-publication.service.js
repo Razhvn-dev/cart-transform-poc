@@ -1,5 +1,5 @@
 import { compileRuntimeSnapshot } from "./bundle-runtime.compiler.js";
-import { comparePreparedFunctionResults } from "./bundle-runtime.result-comparator.js";
+import { assertPublicationPromotionEvidence } from "./bundle-publication.promotion-evidence.js";
 import { assertRuntimeSnapshotMetafieldSize } from "./bundle-runtime.snapshot-size.js";
 import { validateRuntimeSnapshot } from "./bundle-runtime.validator.js";
 import {
@@ -19,7 +19,7 @@ export class BundlePublicationError extends Error {
   }
 }
 
-export function publishDraftRevision(input, dependencies) {
+export async function publishDraftRevision(input, dependencies) {
   const publicationId = input.publication_id;
   const completedSteps = [];
   const warnings = [];
@@ -29,11 +29,13 @@ export function publishDraftRevision(input, dependencies) {
   let publicationAttempt = null;
   let snapshotWriteAttempted = false;
   let pointerWriteAttempted = false;
+  let domainWriteAttempted = false;
   let previousSnapshot = null;
   let proposedDomain = null;
+  const previousDomain = { definition: structuredClone(input.definition), revisions: structuredClone(input.revisions) };
 
   const external = requirePublicationDependencies(dependencies);
-  const existing = external.readPublicationRecord(publicationId);
+  const existing = await external.readPublicationRecord(publicationId);
   if (existing?.result?.success) {
     return {
       ...structuredClone(existing.result),
@@ -52,16 +54,16 @@ export function publishDraftRevision(input, dependencies) {
     completedSteps.push("normalized_validated");
 
     failedStep = "compile_snapshot";
-    snapshot = external.compile(draftRevision.configuration);
+    snapshot = await external.compile(draftRevision.configuration);
     const snapshotRef = runtimeSnapshotReference(snapshot);
     completedSteps.push("snapshot_compiled");
 
     failedStep = "checksum_size_gates";
-    const validationErrors = external.validateSnapshot(snapshot);
+    const validationErrors = await external.validateSnapshot(snapshot);
     if (validationErrors.length > 0) {
       throw new BundlePublicationError("checksum_size_gates", validationErrors.join("; "));
     }
-    const size = external.sizeGuard({ jsonValue: snapshot });
+    const size = await external.sizeGuard({ jsonValue: snapshot });
     if (!size.ok) {
       throw new BundlePublicationError("checksum_size_gates", size.reason);
     }
@@ -69,7 +71,7 @@ export function publishDraftRevision(input, dependencies) {
     completedSteps.push("checksum_size_gates");
 
     failedStep = "promotion_parity_gates";
-    const promotion = external.runPromotionGates({
+    const promotion = await external.runPromotionGates({
       snapshot,
       revision: draftRevision,
       promotion: input.promotion,
@@ -80,8 +82,8 @@ export function publishDraftRevision(input, dependencies) {
     warnings.push(...(promotion.warnings ?? []));
     completedSteps.push("promotion_parity_gates");
 
-    previousSnapshot = external.readSnapshot({ definition: input.definition });
-    if (previousSnapshot && external.validateSnapshot(previousSnapshot).length > 0) {
+    previousSnapshot = await external.readSnapshot({ definition: input.definition });
+    if (previousSnapshot && (await external.validateSnapshot(previousSnapshot)).length > 0) {
       throw new BundlePublicationError("previous_snapshot_validation", "previous snapshot is not recoverable");
     }
     completedSteps.push("previous_snapshot_read");
@@ -98,7 +100,7 @@ export function publishDraftRevision(input, dependencies) {
 
     failedStep = "snapshot_write";
     snapshotWriteAttempted = true;
-    external.writeSnapshot({
+    await external.writeSnapshot({
       definition: input.definition,
       revision: draftRevision,
       snapshot: structuredClone(snapshot),
@@ -109,8 +111,8 @@ export function publishDraftRevision(input, dependencies) {
     completedSteps.push("snapshot_written");
 
     failedStep = "readback_verification";
-    const readBackSnapshot = external.readSnapshot({ definition: input.definition });
-    verifyReadBackSnapshot(readBackSnapshot, snapshotRef, external.validateSnapshot);
+    const readBackSnapshot = await external.readSnapshot({ definition: input.definition });
+    await verifyReadBackSnapshot(readBackSnapshot, snapshotRef, external.validateSnapshot);
     publicationAttempt = transitionPublicationAttempt(publicationAttempt, "snapshot_verified", input.at);
     completedSteps.push("readback_verified");
 
@@ -123,7 +125,7 @@ export function publishDraftRevision(input, dependencies) {
     });
 
     failedStep = "external_pointer_drift";
-    const observedActiveRevisionId = external.readActiveRevisionId({ definition: input.definition });
+    const observedActiveRevisionId = await external.readActiveRevisionId({ definition: input.definition });
     if (observedActiveRevisionId !== previousActiveRevisionId) {
       throw new BundlePublicationError(
         "external_pointer_drift",
@@ -133,7 +135,7 @@ export function publishDraftRevision(input, dependencies) {
 
     failedStep = "active_pointer_update";
     pointerWriteAttempted = true;
-    external.writeActiveRevisionId({
+    await external.writeActiveRevisionId({
       definition: input.definition,
       expectedActiveRevisionId: previousActiveRevisionId,
       activeRevisionId: draftRevision.revision_id,
@@ -142,6 +144,15 @@ export function publishDraftRevision(input, dependencies) {
     publicationAttempt = transitionPublicationAttempt(publicationAttempt, "active_pointer_updated", input.at);
     completedSteps.push("active_pointer_updated");
     if (previousActiveRevisionId !== null) completedSteps.push("previous_revision_superseded");
+
+    failedStep = "domain_lifecycle_write";
+    domainWriteAttempted = true;
+    await external.persistDomain({
+      previousDomain: structuredClone(previousDomain),
+      domain: structuredClone(proposedDomain),
+      publicationId,
+    });
+    completedSteps.push("domain_persisted");
 
     failedStep = "audit_record";
     publicationAttempt = transitionPublicationAttempt(publicationAttempt, "recorded", input.at);
@@ -155,7 +166,7 @@ export function publishDraftRevision(input, dependencies) {
       domain: proposedDomain,
       publicationAttempt,
     });
-    external.writePublicationRecord({
+    await external.writePublicationRecord({
       publicationAttempt,
       result: structuredClone(result),
       domain: structuredClone(proposedDomain),
@@ -163,14 +174,18 @@ export function publishDraftRevision(input, dependencies) {
     return result;
   } catch (error) {
     const resolvedFailedStep = error instanceof BundlePublicationError ? error.step : failedStep;
-    const compensation = compensate({
+    const compensation = await compensate({
       external,
       definition: input.definition,
       previousSnapshot,
+      attemptedSnapshot: snapshot,
       previousActiveRevisionId,
       attemptedActiveRevisionId: input.revision_id,
       snapshotWriteAttempted,
       pointerWriteAttempted,
+      domainWriteAttempted,
+      previousDomain,
+      proposedDomain,
       publicationId,
     });
     if (!compensation.success) warnings.push("compensation_failed");
@@ -187,20 +202,23 @@ export function publishDraftRevision(input, dependencies) {
   }
 }
 
-export function runExistingPublicationPromotionGates({ promotion }) {
-  if (!promotion?.hardcoded_result || !promotion?.candidate_result) {
-    return { ok: false, reason: "promotion_context_required", warnings: [] };
+export function runExistingPublicationPromotionGates({ promotion, snapshot, revision }) {
+  if (!promotion?.evidence) {
+    return { ok: false, reason: "promotion_evidence_required", warnings: [] };
   }
-  const comparison = comparePreparedFunctionResults(
-    promotion.hardcoded_result,
-    promotion.candidate_result,
-  );
-  return comparison.match && comparison.differences.length === 0
-    ? { ok: true, comparison, warnings: [] }
-    : { ok: false, reason: "parity_mismatch", comparison, warnings: [] };
+  try {
+    const evidence = assertPublicationPromotionEvidence(promotion.evidence, {
+      bundle_definition_id: revision.bundle_definition_id,
+      revision_id: revision.revision_id,
+      snapshot_checksum: snapshot.checksum,
+    });
+    return { ok: true, evidence, warnings: [] };
+  } catch (error) {
+    return { ok: false, reason: "promotion_evidence_invalid", warnings: [error.message] };
+  }
 }
 
-export function rollbackPublishedRevision(input, dependencies) {
+export async function rollbackPublishedRevision(input, dependencies) {
   const publicationId = input.publication_id;
   const completedSteps = [];
   const warnings = [];
@@ -208,10 +226,13 @@ export function rollbackPublishedRevision(input, dependencies) {
   let failedStep = "normalize_validate";
   let snapshotWriteAttempted = false;
   let pointerWriteAttempted = false;
+  let domainWriteAttempted = false;
   let previousSnapshot = null;
+  let proposedDomain = null;
+  const previousDomain = { definition: structuredClone(input.definition), revisions: structuredClone(input.revisions) };
   const snapshot = structuredClone(input.target_snapshot);
   const external = requirePublicationDependencies(dependencies);
-  const existing = external.readPublicationRecord(publicationId);
+  const existing = await external.readPublicationRecord(publicationId);
   if (existing?.result?.success) {
     return {
       ...structuredClone(existing.result),
@@ -230,7 +251,7 @@ export function rollbackPublishedRevision(input, dependencies) {
     completedSteps.push("normalized_validated");
 
     failedStep = "checksum_size_gates";
-    const validationErrors = external.validateSnapshot(snapshot);
+    const validationErrors = await external.validateSnapshot(snapshot);
     if (validationErrors.length > 0) {
       throw new BundlePublicationError("checksum_size_gates", validationErrors.join("; "));
     }
@@ -241,13 +262,13 @@ export function rollbackPublishedRevision(input, dependencies) {
     ) {
       throw new BundlePublicationError("checksum_size_gates", "rollback snapshot does not match target revision");
     }
-    const size = external.sizeGuard({ jsonValue: snapshot });
+    const size = await external.sizeGuard({ jsonValue: snapshot });
     if (!size.ok) throw new BundlePublicationError("checksum_size_gates", size.reason);
     if (size.warning) warnings.push(size.warning);
     completedSteps.push("checksum_size_gates");
 
     failedStep = "promotion_parity_gates";
-    const promotion = external.runPromotionGates({
+    const promotion = await external.runPromotionGates({
       snapshot,
       revision: targetRevision,
       promotion: input.promotion,
@@ -258,8 +279,8 @@ export function rollbackPublishedRevision(input, dependencies) {
     warnings.push(...(promotion.warnings ?? []));
     completedSteps.push("promotion_parity_gates");
 
-    previousSnapshot = external.readSnapshot({ definition: input.definition });
-    if (previousSnapshot && external.validateSnapshot(previousSnapshot).length > 0) {
+    previousSnapshot = await external.readSnapshot({ definition: input.definition });
+    if (previousSnapshot && (await external.validateSnapshot(previousSnapshot)).length > 0) {
       throw new BundlePublicationError("previous_snapshot_validation", "previous snapshot is not recoverable");
     }
     completedSteps.push("previous_snapshot_read");
@@ -275,7 +296,7 @@ export function rollbackPublishedRevision(input, dependencies) {
 
     failedStep = "snapshot_write";
     snapshotWriteAttempted = true;
-    external.writeSnapshot({
+    await external.writeSnapshot({
       definition: input.definition,
       revision: targetRevision,
       snapshot: structuredClone(snapshot),
@@ -286,28 +307,28 @@ export function rollbackPublishedRevision(input, dependencies) {
     completedSteps.push("snapshot_written");
 
     failedStep = "readback_verification";
-    verifyReadBackSnapshot(
-      external.readSnapshot({ definition: input.definition }),
+    await verifyReadBackSnapshot(
+      await external.readSnapshot({ definition: input.definition }),
       snapshotRef,
       external.validateSnapshot,
     );
     publicationAttempt = transitionPublicationAttempt(publicationAttempt, "snapshot_verified", input.at);
     completedSteps.push("readback_verified");
 
-    const proposedDomain = rollbackActiveRevision({
+    proposedDomain = rollbackActiveRevision({
       definition: input.definition,
       revisions: input.revisions,
       targetRevisionId: targetRevision.revision_id,
       updatedAt: input.at,
     });
     failedStep = "external_pointer_drift";
-    if (external.readActiveRevisionId({ definition: input.definition }) !== previousActiveRevisionId) {
+    if ((await external.readActiveRevisionId({ definition: input.definition })) !== previousActiveRevisionId) {
       throw new BundlePublicationError("external_pointer_drift", "external active revision pointer does not match the expected previous pointer");
     }
 
     failedStep = "active_pointer_update";
     pointerWriteAttempted = true;
-    external.writeActiveRevisionId({
+    await external.writeActiveRevisionId({
       definition: input.definition,
       expectedActiveRevisionId: previousActiveRevisionId,
       activeRevisionId: targetRevision.revision_id,
@@ -315,6 +336,15 @@ export function rollbackPublishedRevision(input, dependencies) {
     });
     publicationAttempt = transitionPublicationAttempt(publicationAttempt, "active_pointer_updated", input.at);
     completedSteps.push("active_pointer_updated", "previous_revision_superseded");
+
+    failedStep = "domain_lifecycle_write";
+    domainWriteAttempted = true;
+    await external.persistDomain({
+      previousDomain: structuredClone(previousDomain),
+      domain: structuredClone(proposedDomain),
+      publicationId,
+    });
+    completedSteps.push("domain_persisted");
 
     failedStep = "audit_record";
     publicationAttempt = transitionPublicationAttempt(publicationAttempt, "recorded", input.at);
@@ -328,7 +358,7 @@ export function rollbackPublishedRevision(input, dependencies) {
       domain: proposedDomain,
       publicationAttempt,
     });
-    external.writePublicationRecord({
+    await external.writePublicationRecord({
       publicationAttempt,
       result: structuredClone(result),
       domain: structuredClone(proposedDomain),
@@ -336,14 +366,18 @@ export function rollbackPublishedRevision(input, dependencies) {
     return result;
   } catch (error) {
     const resolvedFailedStep = error instanceof BundlePublicationError ? error.step : failedStep;
-    const compensation = compensate({
+    const compensation = await compensate({
       external,
       definition: input.definition,
       previousSnapshot,
+      attemptedSnapshot: snapshot,
       previousActiveRevisionId,
       attemptedActiveRevisionId: input.target_revision_id,
       snapshotWriteAttempted,
       pointerWriteAttempted,
+      domainWriteAttempted,
+      previousDomain,
+      proposedDomain,
       publicationId,
     });
     if (!compensation.success) warnings.push("compensation_failed");
@@ -373,6 +407,8 @@ function requirePublicationDependencies(dependencies = {}) {
     writeActiveRevisionId: requiredDependency(dependencies, "writeActiveRevisionId"),
     restoreSnapshot: requiredDependency(dependencies, "restoreSnapshot"),
     restoreActiveRevisionId: requiredDependency(dependencies, "restoreActiveRevisionId"),
+    persistDomain: requiredDependency(dependencies, "persistDomain"),
+    restoreDomain: requiredDependency(dependencies, "restoreDomain"),
     writePublicationRecord: requiredDependency(dependencies, "writePublicationRecord"),
   };
 }
@@ -384,8 +420,8 @@ function requiredDependency(dependencies, name) {
   return dependencies[name];
 }
 
-function verifyReadBackSnapshot(snapshot, expected, validateSnapshot) {
-  if (!snapshot || validateSnapshot(snapshot).length > 0) {
+async function verifyReadBackSnapshot(snapshot, expected, validateSnapshot) {
+  if (!snapshot || (await validateSnapshot(snapshot)).length > 0) {
     throw new BundlePublicationError("readback_verification", "read-back snapshot is invalid");
   }
   if (
@@ -407,14 +443,18 @@ function runtimeSnapshotReference(snapshot) {
   };
 }
 
-function compensate({
+async function compensate({
   external,
   definition,
   previousSnapshot,
+  attemptedSnapshot,
   previousActiveRevisionId,
   attemptedActiveRevisionId,
   snapshotWriteAttempted,
   pointerWriteAttempted,
+  domainWriteAttempted,
+  previousDomain,
+  proposedDomain,
   publicationId,
 }) {
   if (!snapshotWriteAttempted && !pointerWriteAttempted) {
@@ -423,9 +463,21 @@ function compensate({
 
   const steps = [];
   const failures = [];
+  if (domainWriteAttempted) {
+    try {
+      await external.restoreDomain({
+        previousDomain: structuredClone(previousDomain),
+        domain: structuredClone(proposedDomain),
+        publicationId,
+      });
+      steps.push("domain_restored");
+    } catch (error) {
+      failures.push({ step: "domain_restore", message: error.message });
+    }
+  }
   if (pointerWriteAttempted) {
     try {
-      external.restoreActiveRevisionId({
+      await external.restoreActiveRevisionId({
         definition,
         expectedActiveRevisionId: attemptedActiveRevisionId,
         activeRevisionId: previousActiveRevisionId,
@@ -438,9 +490,11 @@ function compensate({
   }
   if (snapshotWriteAttempted) {
     try {
-      external.restoreSnapshot({
+      await external.restoreSnapshot({
         definition,
         snapshot: structuredClone(previousSnapshot),
+        targetSnapshot: structuredClone(attemptedSnapshot),
+        targetRevisionId: attemptedActiveRevisionId,
         publicationId,
       });
       steps.push("snapshot_restored");

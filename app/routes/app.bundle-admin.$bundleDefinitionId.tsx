@@ -17,6 +17,7 @@ import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import {
   findLatestDraft,
   formatTimestamp,
+  getDraftEditorHydrationKey,
   getEnvelopeError,
   isPersistedDraftConfiguration,
   parseConfigurationDocument,
@@ -91,7 +92,7 @@ export default function BundleAdminDetailPage() {
 
   useEffect(() => {
     if (!detail) return;
-    const revisionKey = `${detail.definition.updated_at}:${draft?.revision_id ?? "new"}`;
+    const revisionKey = getDraftEditorHydrationKey(detail.definition.updated_at, draft);
     if (hydratedRevision.current === revisionKey) return;
     hydratedRevision.current = revisionKey;
     setSlug(detail.definition.slug);

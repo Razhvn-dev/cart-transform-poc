@@ -28,6 +28,9 @@ export function createBundleAdminService({
   persistence,
   repository,
   publicationService,
+  publicationDriver = null,
+  publicationEnabled = false,
+  resolvePromotionEvidence = null,
   compile = compileRuntimeSnapshot,
   sizeGuard = assertRuntimeSnapshotMetafieldSize,
   now = () => new Date().toISOString(),
@@ -238,6 +241,68 @@ export function createBundleAdminService({
       }
       return compareRevisionWithActive(persistence, repository, revision);
     },
+
+    // This is deliberately a read-only preflight. Publishing remains unavailable
+    // until a separately authorized command can supply real promotion evidence.
+    async prepareDraftPublication({ revision_id: revisionId }) {
+      const revision = await readRevision(persistence, revisionId);
+      if (revision.status !== "draft") {
+        throw new BundleAdminApplicationError("IMMUTABLE_REVISION", "only draft revisions may be prepared for publication");
+      }
+
+      const preview = await this.compilePreview({ revision_id: revisionId });
+      const blockers = preview.valid
+        ? []
+        : preview.errors.map((message) => ({ code: "DRAFT_NOT_READY", message }));
+
+      return {
+        revision: toRevisionSummary(revision),
+        local_preflight_passed: blockers.length === 0,
+        blockers,
+        warnings: preview.warnings,
+        snapshot_checksum: preview.snapshot_checksum,
+        snapshot_byte_size: preview.snapshot_byte_size,
+        configuration_version: preview.configuration_version,
+        diff_from_active: preview.diff_from_active,
+        required_before_publish: ["runtime_promotion_parity", "explicit_publish_authorization"],
+      };
+    },
+
+    async publishDraftRevision({ revision_id: revisionId, publication_id: publicationId, confirmation }) {
+      if (!publicationEnabled) {
+        throw new BundleAdminApplicationError("UNSUPPORTED_CAPABILITY", "publication command is disabled");
+      }
+      if (typeof publicationId !== "string" || publicationId.trim() === "") {
+        throw new BundleAdminApplicationError("VALIDATION_FAILED", "publication_id is required");
+      }
+      const revision = await readRevision(persistence, revisionId);
+      if (confirmation !== publicationConfirmation(revision.bundle_definition_id, revisionId)) {
+        throw new BundleAdminApplicationError("CONFLICT", "publication confirmation does not match the target draft");
+      }
+      if (typeof publicationDriver !== "object" || typeof resolvePromotionEvidence !== "function") {
+        throw new BundleAdminApplicationError(
+          "UNSUPPORTED_CAPABILITY",
+          "publication command requires server-side persistence and promotion evidence",
+        );
+      }
+
+      const preflight = await this.prepareDraftPublication({ revision_id: revisionId });
+      if (!preflight.local_preflight_passed) {
+        throw new BundleAdminApplicationError("VALIDATION_FAILED", "draft did not pass publication preflight", preflight);
+      }
+
+      const definition = await readDefinition(persistence, revision.bundle_definition_id);
+      const revisions = await listRevisions(repository, revision.bundle_definition_id);
+      const promotion = await resolvePromotionEvidence({ definition, revision, revisions });
+      return publicationService({
+        publication_id: publicationId,
+        definition,
+        revisions,
+        revision_id: revisionId,
+        promotion,
+        at: now(),
+      }, publicationDriver);
+    },
   };
 }
 
@@ -297,6 +362,10 @@ function normalizeDraftConfiguration(configuration, definition, revisionNumber) 
     published_revision: Math.max(1, normalized.revision?.published_revision ?? revisionNumber),
   };
   return normalized;
+}
+
+function publicationConfirmation(bundleDefinitionId, revisionId) {
+  return `PUBLISH:${bundleDefinitionId}:${revisionId}`;
 }
 
 function sameParentBinding(left, right) {

@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createBundleAdminService, toApplicationErrorDto } from "./bundle-admin.service.js";
 import { createInMemoryBundleAdminRepository } from "./bundle-admin.in-memory-repository.js";
 import { createInMemoryBundlePersistenceAdapter } from "../../../extensions/master-kit-expand/src/config/bundle-persistence.in-memory-adapter.js";
 import { publishDraftRevision } from "../../../extensions/master-kit-expand/src/config/bundle-publication.service.js";
+import { createInMemoryPublicationDriver } from "../../../extensions/master-kit-expand/src/config/bundle-publication.in-memory-driver.js";
 import { compileRuntimeSnapshot } from "../../../extensions/master-kit-expand/src/config/bundle-runtime.compiler.js";
 import { masterKitConfigV1 } from "../../../extensions/master-kit-expand/src/config/fixtures/master-kit-config.v1.js";
 
@@ -204,6 +205,120 @@ describe("bundle admin application service", () => {
     expect(validation).toMatchObject({ valid: false });
     expect(validation.errors).toContain("revision.configuration.component_groups must be a non-empty array");
     expect(preview.snapshot_checksum).toBeNull();
+  });
+
+  it("prepares a valid draft without invoking the publication service or persistence writes", async () => {
+    const persistence = createInMemoryBundlePersistenceAdapter({
+      definitions: [definition()],
+      revisions: [revision({ id: draftRevisionId, number: 1, status: "draft" })],
+    });
+    const publicationService = vi.fn();
+    const writeRevision = vi.spyOn(persistence, "writeRevision");
+    const app = createBundleAdminService({
+      persistence,
+      repository: createInMemoryBundleAdminRepository({ persistence }),
+      publicationService,
+      now: () => "2026-07-15T01:00:00Z",
+      idFactory: () => draftRevisionId,
+    });
+
+    await expect(app.prepareDraftPublication({ revision_id: draftRevisionId })).resolves.toMatchObject({
+      local_preflight_passed: true,
+      blockers: [],
+      required_before_publish: ["runtime_promotion_parity", "explicit_publish_authorization"],
+    });
+    expect(publicationService).not.toHaveBeenCalled();
+    expect(writeRevision).not.toHaveBeenCalled();
+  });
+
+  it("returns draft validation blockers from the read-only publication preflight", async () => {
+    const invalid = revision({ id: draftRevisionId, number: 2, status: "draft" });
+    invalid.configuration.component_groups = [];
+    const { app } = service({ definitions: [definition()], revisions: [invalid] });
+
+    await expect(app.prepareDraftPublication({ revision_id: draftRevisionId })).resolves.toMatchObject({
+      local_preflight_passed: false,
+      snapshot_checksum: null,
+      required_before_publish: ["runtime_promotion_parity", "explicit_publish_authorization"],
+    });
+  });
+
+  it("keeps the publication command disabled unless an explicit server composition enables it", async () => {
+    const draft = revision({ id: draftRevisionId, number: 2, status: "draft" });
+    const { app } = service({ definitions: [definition(publishedRevisionId)], revisions: [revision(), draft] });
+
+    await expectApplicationError(
+      () => app.publishDraftRevision({
+        revision_id: draftRevisionId,
+        publication_id: "21111111-1111-4111-8111-000000000001",
+        confirmation: `PUBLISH:${definitionId}:${draftRevisionId}`,
+      }),
+      "UNSUPPORTED_CAPABILITY",
+    );
+  });
+
+  it("publishes only after server-side evidence and an exact draft confirmation", async () => {
+    const current = revision();
+    const draft = revision({ id: draftRevisionId, number: 2, status: "draft" });
+    const persistence = createInMemoryBundlePersistenceAdapter({ definitions: [definition(publishedRevisionId)], revisions: [current, draft] });
+    const publicationDriver = createInMemoryPublicationDriver({
+      snapshots: { [definitionId]: compileRuntimeSnapshot(current.configuration) },
+      activeRevisionIds: { [definitionId]: publishedRevisionId },
+    });
+    const app = createBundleAdminService({
+      persistence,
+      repository: createInMemoryBundleAdminRepository({ persistence }),
+      publicationService: publishDraftRevision,
+      publicationDriver: publicationDriver.dependencies,
+      publicationEnabled: true,
+      resolvePromotionEvidence: async ({ definition: currentDefinition, revision: currentRevision }) => ({
+        evidence: {
+          schema_version: "bundle_publication_promotion_evidence.v1",
+          bundle_definition_id: currentDefinition.bundle_definition_id,
+          revision_id: currentRevision.revision_id,
+          snapshot_checksum: compileRuntimeSnapshot(currentRevision.configuration).checksum,
+          fixture_set_id: "unit-test",
+          fixtures: [{
+            fixture_id: "unit-test",
+            hardcoded_result: { operations: [] },
+            candidate_result: { operations: [] },
+          }],
+        },
+      }),
+      now: () => "2026-07-15T01:00:00Z",
+      idFactory: () => draftRevisionId,
+    });
+
+    await expect(app.publishDraftRevision({
+      revision_id: draftRevisionId,
+      publication_id: "21111111-1111-4111-8111-000000000001",
+      confirmation: `PUBLISH:${definitionId}:${draftRevisionId}`,
+    })).resolves.toMatchObject({ success: true, active_revision_id: draftRevisionId });
+    expect(publicationDriver.state.activeRevisionIds.get(definitionId)).toBe(draftRevisionId);
+  });
+
+  it("rejects a publication confirmation that names a different draft", async () => {
+    const draft = revision({ id: draftRevisionId, number: 2, status: "draft" });
+    const persistence = createInMemoryBundlePersistenceAdapter({ definitions: [definition(publishedRevisionId)], revisions: [revision(), draft] });
+    const app = createBundleAdminService({
+      persistence,
+      repository: createInMemoryBundleAdminRepository({ persistence }),
+      publicationService: publishDraftRevision,
+      publicationEnabled: true,
+      publicationDriver: {},
+      resolvePromotionEvidence: async () => ({}),
+      now: () => "2026-07-15T01:00:00Z",
+      idFactory: () => draftRevisionId,
+    });
+
+    await expectApplicationError(
+      () => app.publishDraftRevision({
+        revision_id: draftRevisionId,
+        publication_id: "21111111-1111-4111-8111-000000000001",
+        confirmation: "PUBLISH:other:other",
+      }),
+      "CONFLICT",
+    );
   });
 
   it("returns compile checksum, size, counts, and active diff for a valid draft", async () => {

@@ -21,6 +21,8 @@ This application layer has authenticated Remix resource routes consumed by the e
 | `validateDraft()` | draft revision ID | validation DTO |
 | `compilePreview()` | draft revision ID | validation, size, checksum, counts, active diff |
 | `compareDraftAgainstActive()` | draft revision ID | exact flag and structural differences |
+| `prepareDraftPublication()` | draft revision ID | read-only local preflight; no publication writes |
+| `publishDraftRevision()` | draft revision ID, publication ID, exact confirmation | guarded internal command; no route/UI entry |
 
 `BundleSummary` contains definition identity, parent binding, active and latest-draft revision pointers/numbers, revision count, and update time. `BundleDetail` exposes full configuration only for draft revisions so the editor can save through the draft-only command; immutable revision history remains summary-only. Runtime Snapshot content is never an input or returned as editable data; only immutable `runtime_snapshot_ref` metadata appears on published-history DTOs.
 
@@ -42,7 +44,9 @@ Supported codes: `NOT_FOUND`, `CONFLICT`, `VALIDATION_FAILED`, `IMMUTABLE_REVISI
 - Only `draft` revisions can be updated, validated, compiled, or compared.
 - The service sets configuration ID, version, status, and revision fields. A caller cannot promote or assign a Runtime Snapshot.
 - Preview validates the revision first, then compiles the existing Runtime Snapshot V1 and applies the accepted 7000/7500/9000-byte gate. It returns checksum, byte size, configuration version, component/group/preset/rule counts, warnings/errors, and a complete structural diff against the active revision.
-- Publishing remains out of scope. The injected Publication Service is reserved for the later explicit publish application command.
+- `prepareDraftPublication()` only aggregates the existing validation, compile/size, and active-diff evidence. It never calls the injected Publication Service, changes a revision, writes a Snapshot, or switches `active_revision_id`. Its `local_preflight_passed` result is deliberately not a publish authorization: real Function promotion parity and explicit publish authorization remain required.
+- `publishDraftRevision()` is a local application command with a fail-closed default. It requires explicit server composition (`publicationEnabled`), an injected persistence driver, server-side fixture-based promotion evidence bound to the exact `bundle_definition_id`, `revision_id`, and compiled Snapshot checksum, a caller-supplied stable `publication_id`, and `PUBLISH:<bundle_definition_id>:<revision_id>` confirmation. Bare candidate/hard-coded result payloads are rejected. There is no authenticated resource route or Polaris control for it, so it cannot be triggered through the current Admin UI.
+- Publishing remains out of scope for the deployed Admin UI. The guarded command is retained only for local integration tests until a separate release and live-validation phase authorizes it.
 
 ## Authenticated Resource Routes
 

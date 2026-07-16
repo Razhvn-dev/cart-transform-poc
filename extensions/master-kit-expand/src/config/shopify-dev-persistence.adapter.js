@@ -60,6 +60,15 @@ export function createDevShopifyPersistenceAdapter({ execute, appClientId, bindi
       return (await readProductMetafield(graphql, definition.parent_binding.product_gid, bindings.metafields.runtimeSnapshotKey, bindings))
         .document;
     },
+    async readActiveRevisionId(bundleDefinitionId) {
+      const definition = await adapter.readBundleDefinition(bundleDefinitionId);
+      return (await readProductMetafield(
+        graphql,
+        definition.parent_binding.product_gid,
+        bindings.metafields.activeRevisionKey,
+        bindings,
+      )).document;
+    },
     async writeRuntimeSnapshot(input) {
       assertSnapshotCasInput(input);
       const definition = await adapter.readBundleDefinition(input.bundle_definition_id);

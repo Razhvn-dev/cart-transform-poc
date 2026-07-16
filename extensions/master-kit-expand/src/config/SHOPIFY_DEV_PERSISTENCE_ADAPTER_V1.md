@@ -12,8 +12,12 @@ Metaobject definitions, metafield definitions, records, or Snapshots on construc
 | Runtime Snapshot | product `aces_dev.bundle_runtime_snapshot_v1` JSON metafield | `metafieldsSet.compareDigest` |
 | active revision | product `aces_dev.active_revision_id_v1` text metafield | `metafieldsSet.compareDigest` |
 
-The adapter is asynchronous and is not wired into the local synchronous publication service or
-Cart Transform. It is excluded from production Function entries and artifacts.
+The adapter and staged publication orchestrator are asynchronous. The local
+`bundle-publication.persistence-driver.js` bridges the normalized adapter to the orchestrator,
+including external active-pointer reads, Snapshot checksum CAS, lifecycle Metaobject writes, and
+compensation writes. The orchestrator still has no HTTP command or UI trigger, so it cannot
+publish from the Bundle Admin. None of these modules is wired into Cart Transform, and all are
+excluded from production Function entries and artifacts.
 
 The `$app:` prefix makes the three Metaobject definitions app-owned by `cart-transform-poc-dev`.
 

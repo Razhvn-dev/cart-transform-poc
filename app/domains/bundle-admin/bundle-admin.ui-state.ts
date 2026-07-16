@@ -12,6 +12,7 @@ export type RevisionSummary = {
   revision_id: string;
   revision_number: number;
   status: string;
+  updated_at?: string;
   configuration?: Record<string, unknown>;
 };
 
@@ -23,6 +24,13 @@ export function findLatestDraft(revisions: RevisionSummary[]) {
   return revisions
     .filter((revision) => revision.status === "draft")
     .sort((left, right) => right.revision_number - left.revision_number)[0] ?? null;
+}
+
+export function getDraftEditorHydrationKey(
+  definitionUpdatedAt: string | null | undefined,
+  draft: RevisionSummary | null | undefined,
+) {
+  return `${definitionUpdatedAt ?? ""}:${draft?.revision_id ?? "new"}:${draft?.updated_at ?? ""}`;
 }
 
 export function isPersistedDraftConfiguration(

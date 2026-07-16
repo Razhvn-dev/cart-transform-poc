@@ -2,6 +2,7 @@ export function createInMemoryPublicationDriver({ snapshots = {}, activeRevision
   const snapshotStore = new Map(Object.entries(structuredClone(snapshots)));
   const pointerStore = new Map(Object.entries(structuredClone(activeRevisionIds)));
   const recordStore = new Map(Object.entries(structuredClone(records)));
+  let persistedDomain = null;
   const calls = [];
 
   const dependencies = {
@@ -39,6 +40,14 @@ export function createInMemoryPublicationDriver({ snapshots = {}, activeRevision
       if (activeRevisionId === null) pointerStore.delete(definition.bundle_definition_id);
       else pointerStore.set(definition.bundle_definition_id, activeRevisionId);
     },
+    persistDomain({ domain }) {
+      calls.push("persist_domain");
+      persistedDomain = clone(domain);
+    },
+    restoreDomain({ previousDomain }) {
+      calls.push("restore_domain");
+      persistedDomain = clone(previousDomain);
+    },
     writePublicationRecord({ publicationAttempt, result, domain }) {
       calls.push("write_publication_record");
       recordStore.set(publicationAttempt.publication_id, clone({ publicationAttempt, result, domain }));
@@ -52,6 +61,7 @@ export function createInMemoryPublicationDriver({ snapshots = {}, activeRevision
       snapshots: snapshotStore,
       activeRevisionIds: pointerStore,
       records: recordStore,
+      get persistedDomain() { return clone(persistedDomain); },
     },
   };
 }

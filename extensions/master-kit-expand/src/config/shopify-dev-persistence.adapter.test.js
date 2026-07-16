@@ -207,6 +207,18 @@ describe("development Shopify persistence adapter", () => {
     expect(write.variables.metafields[0]).toMatchObject({ key: "active_revision_id_v1", compareDigest: "digest-1" });
   });
 
+  it("reads the external active revision pointer before a publication CAS", async () => {
+    const { adapter, calls } = createAdapter();
+
+    await expect(adapter.readActiveRevisionId(definition.bundle_definition_id))
+      .resolves.toBe(definition.active_revision_id);
+    const pointerRead = calls.find((call) => (
+      call.query.includes("BundlePersistenceProductMetafield")
+      && call.variables.key === "active_revision_id_v1"
+    ));
+    expect(pointerRead.variables.namespace).toBe("aces_dev");
+  });
+
   it("contains Shopify compare-and-set conflicts and never uses unsafe delete compensation", async () => {
     const { adapter } = createAdapter({ userErrors: [{ code: "INVALID_COMPARE_DIGEST", message: "stale" }] });
     await expect(adapter.compareAndSetActiveRevision({

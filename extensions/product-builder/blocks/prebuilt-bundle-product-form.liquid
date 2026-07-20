@@ -1,0 +1,38 @@
+{% doc %}
+  Adds correlation-only Bundle Metadata V1 fields to the native product form for
+  a pre-built Bundle SKU. Placing this block in an approved pre-built product
+  template is the explicit opt-in; it must not require a second setting that
+  can silently leave the native form unprotected.
+{% enddoc %}
+
+{% if product != blank %}
+  {% capture parent_product_gid %}gid://shopify/Product/{{ product.id }}{% endcapture %}
+
+  <div
+    data-prebuilt-bundle-product-form
+    data-parent-product-gid="{{ parent_product_gid | strip | escape }}"
+    data-parent-title="{{ product.title | escape }}"
+    data-quantity-error="{{ 'prebuilt_bundle.quantity_one_at_a_time' | t | escape }}"
+    hidden
+    {{ block.shopify_attributes }}
+  >
+    <script type="application/json" data-prebuilt-bundle-variant-map>
+      {
+        {% for variant in product.variants %}
+          "{{ variant.id }}": {
+            "variantGid": "gid://shopify/ProductVariant/{{ variant.id }}",
+            "sku": {{ variant.sku | json }}
+          }{% unless forloop.last %},{% endunless %}
+        {% endfor %}
+      }
+    </script>
+  </div>
+{% endif %}
+
+{% schema %}
+{
+  "name": "Prebuilt bundle metadata",
+  "target": "section",
+  "javascript": "prebuilt-bundle-product-form.js"
+}
+{% endschema %}

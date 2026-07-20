@@ -32,8 +32,8 @@ The release sequence is:
 
 1. Run `npm run validate:stable` locally.
 2. Commit only the reviewed files and push the approved commit to `origin/main`.
-3. In Devbox, pull that exact commit and run `npm run build`.
-4. Publish a new Devbox version and update the Sealos application.
+3. In Devbox, pull that exact commit.
+4. Publish a new Devbox version and update the Sealos application. The container startup script builds Remix before setup and server start, so a separate Devbox `npm run build` is no longer required.
 5. Verify the embedded Admin app from Sealos.
 6. If the batch changes Shopify Functions or the Theme App Extension, deploy
    those extensions separately using the explicitly approved development config:
@@ -69,13 +69,13 @@ The current Devbox process starts the checked-out source tree:
 
 ```bash
 cd ~/project/cart-transform-poc
-npm run build
 exec npm run docker-start
 ```
 
-`npm run docker-start` runs Prisma setup and then starts the already-built
-Remix server; it does not run `npm run build`. The exact pull/build/release
-steps are in
+`npm run docker-start` builds Remix, runs Prisma setup, and then starts the
+Remix server. This ensures a newly pulled source revision cannot reuse a stale
+`build/` directory. A cold image pull may still take several minutes before
+the startup command begins. The exact pull/release steps are in
 [`docs/SEALOS_DEVBOX_RELEASE_WORKFLOW.md`](./docs/SEALOS_DEVBOX_RELEASE_WORKFLOW.md).
 
 ## Development environment

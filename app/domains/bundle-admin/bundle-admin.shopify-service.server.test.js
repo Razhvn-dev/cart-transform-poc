@@ -1,13 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
-import { DEV_SHOPIFY_APP_CLIENT_ID, createDevShopifyBundleAdminService } from "./bundle-admin.shopify-service.server.js";
+import {
+  DEV_SHOPIFY_APP_CLIENT_ID,
+  createDevShopifyBundleAdminService,
+  createPrebuiltImportComposition,
+} from "./bundle-admin.shopify-service.server.js";
 import { createBundleAdminRouteHandlers } from "./bundle-admin.http.server.js";
 import { masterKitConfigV1 } from "../../../extensions/master-kit-expand/src/config/fixtures/master-kit-config.v1.js";
+import { importFixture } from "../../../extensions/master-kit-expand/src/config/prebuilt-bundle-import.plan.test-fixture.js";
 
 const definitionId = "f6cf6c74-90a6-4f15-9e4f-2dbeb2fc4b89";
 const revisionId = "1b9b0e1d-0f9f-4ea4-8bb4-1f2dc1aef702";
 
 function createTransport({ staleRevisionUpdate = false, staleReadAfterRevisionUpdate = false } = {}) {
   const documents = new Map();
+  const productMetafields = new Map();
+  const shopMetafields = new Map();
+  let metafieldSerial = 0;
   let stale = staleRevisionUpdate;
   let staleReadDocument = null;
   const calls = [];
@@ -43,10 +51,33 @@ function createTransport({ staleRevisionUpdate = false, staleReadAfterRevisionUp
         if (staleReadAfterRevisionUpdate) staleReadDocument = previousDocument;
         return { data: { metaobjectUpdate: { metaobject: { id: entry.id, fields: fields(entry.document) }, userErrors: [] } } };
       }
+      if (query.includes("BundlePersistenceProductMetafield")) {
+        const entry = productMetafields.get(`${variables.productId}:${variables.namespace}:${variables.key}`) ?? null;
+        return { data: { product: { metafield: entry } } };
+      }
+      if (query.includes("BundlePersistenceShopMetafield")) {
+        const entry = shopMetafields.get(`${variables.namespace}:${variables.key}`) ?? null;
+        return { data: { shop: { id: "gid://shopify/Shop/1", metafield: entry } } };
+      }
+      if (query.includes("BundlePersistenceMetafieldsSet")) {
+        const input = variables.metafields[0];
+        const entry = {
+          type: input.type,
+          value: input.value,
+          jsonValue: input.type === "json" ? JSON.parse(input.value) : null,
+          compareDigest: `digest-${++metafieldSerial}`,
+        };
+        if (input.ownerId.startsWith("gid://shopify/Shop/")) {
+          shopMetafields.set(`${input.namespace}:${input.key}`, entry);
+        } else {
+          productMetafields.set(`${input.ownerId}:${input.namespace}:${input.key}`, entry);
+        }
+        return { data: { metafieldsSet: { metafields: [entry], userErrors: [] } } };
+      }
       throw new Error("unexpected Shopify operation");
     },
   };
-  return { admin, documents, calls };
+  return { admin, documents, productMetafields, shopMetafields, calls };
 }
 
 function config(version = 1) {
@@ -59,10 +90,11 @@ function config(version = 1) {
   return value;
 }
 
-function service(transport) {
+function service(transport, options = {}) {
   return createDevShopifyBundleAdminService({
     admin: transport.admin,
     appClientId: DEV_SHOPIFY_APP_CLIENT_ID,
+    ...options,
   });
 }
 
@@ -79,6 +111,58 @@ function definitionInput() {
 }
 
 describe("Bundle Admin Shopify dev persistence composition", () => {
+  it("keeps pre-built import execution fail-closed unless its dedicated server opt-in is enabled", () => {
+    const persistence = {};
+    expect(createPrebuiltImportComposition({ persistence, enabled: false }))
+      .toEqual({ enabled: false, executor: null, ledger: null, createTargetWriter: null });
+    expect(() => createPrebuiltImportComposition({ persistence, enabled: true }))
+      .toThrow(expect.objectContaining({ code: "UNSUPPORTED_CAPABILITY" }));
+  });
+
+  it("composes the durable import executor only from a CAS-capable persistence adapter", () => {
+    const persistence = {
+      readPrebuiltImportLedger: vi.fn(),
+      writePrebuiltImportLedger: vi.fn(),
+    };
+    const composition = createPrebuiltImportComposition({ persistence, enabled: true });
+    expect(composition).toMatchObject({
+      enabled: true,
+      executor: expect.any(Function),
+      ledger: { read: expect.any(Function), write: expect.any(Function) },
+      createTargetWriter: expect.any(Function),
+    });
+  });
+
+  it("runs the guarded pre-built import chain to durable Shopify-shaped state and retries idempotently", async () => {
+    const transport = createTransport();
+    const app = service(transport, { prebuiltImportExecutionEnabled: true });
+    const packageValue = importFixture();
+    const reviewed = await app.reviewPrebuiltBundleImport({ import_package: packageValue });
+    const input = {
+      import_package: packageValue,
+      confirmation_token: reviewed.confirmation_token,
+      confirmation: `IMPORT:${reviewed.import_id}:${reviewed.confirmation_token}`,
+    };
+
+    const firstResult = await app.executePrebuiltBundleImport(input);
+    expect(firstResult, JSON.stringify(firstResult)).toMatchObject({
+      completed: 1,
+      failed: 0,
+      already_completed: 0,
+    });
+    await expect(app.executePrebuiltBundleImport(input)).resolves.toMatchObject({
+      completed: 0,
+      failed: 0,
+      already_completed: 1,
+    });
+    expect([...transport.documents.values()].some((entry) => (
+      entry.type === "$app:aces_bundle_definition_dev" && entry.document.active_revision_id
+    ))).toBe(true);
+    expect(transport.productMetafields.size).toBe(3);
+    expect(transport.shopMetafields.size).toBe(1);
+    expect([...transport.shopMetafields.values()][0].jsonValue.state).toBe("completed");
+  });
+
   it("lists an empty dev store, then creates, lists, and reads a bundle definition", async () => {
     const transport = createTransport();
     const app = service(transport);
@@ -89,6 +173,12 @@ describe("Bundle Admin Shopify dev persistence composition", () => {
     await expect(app.getBundleDetail({ bundle_definition_id: definitionId }))
       .resolves.toMatchObject({ definition: { bundle_definition_id: definitionId }, revisions: [] });
     expect(transport.calls.some((call) => call.variables?.type === "$app:aces_bundle_definition_dev")).toBe(true);
+  });
+
+  it("normalizes a Bundle Admin list read failure as persistence failure", async () => {
+    const app = service({ admin: { graphql: async () => { throw new Error("malformed upstream response"); } } });
+
+    await expect(app.listBundles()).rejects.toMatchObject({ code: "PERSISTENCE_FAILED" });
   });
 
   it("creates and updates a draft, returns revision history, validation, and compile preview", async () => {
@@ -132,6 +222,30 @@ describe("Bundle Admin Shopify dev persistence composition", () => {
       created_by: "test.myshopify.com",
     });
 
+    await expect(app.publishDraftRevision({
+      revision_id: revisionId,
+      publication_id: "21111111-1111-4111-8111-000000000001",
+      confirmation: `PUBLISH:${definitionId}:${revisionId}`,
+    })).rejects.toMatchObject({ code: "UNSUPPORTED_CAPABILITY" });
+    expect(transport.calls.some((call) => call.query.includes("MetafieldsSet"))).toBe(false);
+  });
+
+  it.each([
+    ["only the server opt-in", { publicationEnabled: true }],
+    ["only the evidence directory", { publicationEvidenceDirectory: "C:/server-owned-evidence" }],
+  ])("keeps publication disabled with %s", async (_label, options) => {
+    const transport = createTransport();
+    const app = service(transport, options);
+    await app.createBundleDefinition(definitionInput());
+    await app.createDraftRevision({
+      bundle_definition_id: definitionId,
+      revision_id: revisionId,
+      configuration: config(),
+      created_by: "test.myshopify.com",
+    });
+
+    await expect(app.getBundleDetail({ bundle_definition_id: definitionId }))
+      .resolves.toMatchObject({ publication: { enabled: false, requires_server_evidence: true } });
     await expect(app.publishDraftRevision({
       revision_id: revisionId,
       publication_id: "21111111-1111-4111-8111-000000000001",

@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { comparePreparedFunctionResults } from "./bundle-runtime.result-comparator.js";
+import {
+  comparePreparedFunctionResults,
+  findUnsupportedFunctionResultShape,
+} from "./bundle-runtime.result-comparator.js";
 
 function result(overrides = {}) {
   return {
@@ -76,5 +79,18 @@ describe("runtime result comparator", () => {
         unsupported: true,
       }),
     ]));
+  });
+
+  it("exposes the same read-only supported-shape check for isolated candidates", () => {
+    const candidate = result({ unexpectedCandidateField: true });
+    const before = JSON.stringify(candidate);
+
+    expect(findUnsupportedFunctionResultShape(candidate)).toEqual([
+      expect.objectContaining({
+        path: "operations[0].expand.unexpectedCandidateField",
+        unsupported: true,
+      }),
+    ]);
+    expect(JSON.stringify(candidate)).toBe(before);
   });
 });

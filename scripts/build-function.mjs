@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
+  readFileSync,
   writeFileSync,
 } from "node:fs";
 import { gunzipSync } from "node:zlib";
@@ -10,6 +11,8 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import {
   assertProductionCleanArtifacts,
+  assertPrebuiltObserveGeneratedInputType,
+  assertPrebuiltProjectionGeneratedInputType,
   assertProfileAppConfigAllowed,
   assertStage2CleanArtifacts,
   assertStage3GeneratedInputType,
@@ -122,6 +125,36 @@ async function bundleFunction() {
   });
 }
 
+function assertPrebuiltCandidateBundleIsRuntimeSafe() {
+  const source = readFileSync(functionJs, "utf8");
+
+  for (const token of ["structuredClone("]) {
+    if (source.includes(token)) {
+      throw new Error(`Pre-built candidate bundle contains unsupported runtime call "${token}"`);
+    }
+  }
+
+  for (const token of [
+    "prebuiltRuntimeMappingMetafield",
+    "prebuiltRuntimeSnapshotMetafield",
+    "SNAPSHOT_PARENT_PRODUCT_MISMATCH",
+  ]) {
+    if (!source.includes(token)) {
+      throw new Error(`Pre-built candidate bundle is missing required runtime token "${token}"`);
+    }
+  }
+}
+
+function assertPrebuiltProjectionBundleIsRuntimeSafe() {
+  const source = readFileSync(functionJs, "utf8");
+  for (const token of ["structuredClone(", "prebuiltRuntimeSnapshotMetafield", "prebuiltRuntimeMappingMetafield"]) {
+    if (source.includes(token)) throw new Error(`Pre-built projection bundle contains forbidden runtime token "${token}"`);
+  }
+  for (const token of ["prebuiltExpandProjectionMetafield", "prebuilt_bundle_expand_projection.v1"]) {
+    if (!source.includes(token)) throw new Error(`Pre-built projection bundle is missing required runtime token "${token}"`);
+  }
+}
+
 function compileWasm() {
   writeFileSync(
     witFile,
@@ -160,6 +193,18 @@ try {
     console.log(`Using ${functionProfile} Function profile (${selected.query}, ${entryPath})`);
     await ensureJavy();
     await bundleFunction();
+    if ([
+      "prebuilt-candidate",
+      "prebuilt-candidate-build-static-probe",
+      "prebuilt-candidate-import-static-probe",
+      "prebuilt-metadata-lookup-static-probe",
+    ].includes(functionProfile)) {
+      assertPrebuiltCandidateBundleIsRuntimeSafe();
+    }
+    if (functionProfile === "prebuilt-projection-candidate") {
+      assertPrebuiltProjectionBundleIsRuntimeSafe();
+      assertPrebuiltProjectionGeneratedInputType();
+    }
     if (
       functionProfile === "bisect-stage-3" ||
       functionProfile === "bisect-stage-4" ||
@@ -169,6 +214,16 @@ try {
       functionProfile === "bisect-stage-8"
     ) {
       assertStage3GeneratedInputType();
+    }
+    if ([
+      "prebuilt-observe",
+      "prebuilt-resolve-observe",
+      "prebuilt-candidate",
+      "prebuilt-candidate-build-static-probe",
+      "prebuilt-candidate-import-static-probe",
+      "prebuilt-metadata-lookup-static-probe",
+    ].includes(functionProfile)) {
+      assertPrebuiltObserveGeneratedInputType();
     }
     compileWasm();
     console.log(`Built ${functionWasm}`);

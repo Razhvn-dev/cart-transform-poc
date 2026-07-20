@@ -82,6 +82,12 @@ export async function publishDraftRevision(input, dependencies) {
     warnings.push(...(promotion.warnings ?? []));
     completedSteps.push("promotion_parity_gates");
 
+    // Refuse a stale external pointer before writing a Snapshot. The second
+    // check below still protects the interval between this preflight and CAS.
+    failedStep = "external_pointer_drift";
+    await assertExternalPointerMatches(external, input.definition, previousActiveRevisionId);
+    completedSteps.push("external_pointer_preflight");
+
     previousSnapshot = await external.readSnapshot({ definition: input.definition });
     if (previousSnapshot && (await external.validateSnapshot(previousSnapshot)).length > 0) {
       throw new BundlePublicationError("previous_snapshot_validation", "previous snapshot is not recoverable");
@@ -125,13 +131,7 @@ export async function publishDraftRevision(input, dependencies) {
     });
 
     failedStep = "external_pointer_drift";
-    const observedActiveRevisionId = await external.readActiveRevisionId({ definition: input.definition });
-    if (observedActiveRevisionId !== previousActiveRevisionId) {
-      throw new BundlePublicationError(
-        "external_pointer_drift",
-        "external active revision pointer does not match the expected previous pointer",
-      );
-    }
+    await assertExternalPointerMatches(external, input.definition, previousActiveRevisionId);
 
     failedStep = "active_pointer_update";
     pointerWriteAttempted = true;
@@ -279,6 +279,10 @@ export async function rollbackPublishedRevision(input, dependencies) {
     warnings.push(...(promotion.warnings ?? []));
     completedSteps.push("promotion_parity_gates");
 
+    failedStep = "external_pointer_drift";
+    await assertExternalPointerMatches(external, input.definition, previousActiveRevisionId);
+    completedSteps.push("external_pointer_preflight");
+
     previousSnapshot = await external.readSnapshot({ definition: input.definition });
     if (previousSnapshot && (await external.validateSnapshot(previousSnapshot)).length > 0) {
       throw new BundlePublicationError("previous_snapshot_validation", "previous snapshot is not recoverable");
@@ -322,9 +326,7 @@ export async function rollbackPublishedRevision(input, dependencies) {
       updatedAt: input.at,
     });
     failedStep = "external_pointer_drift";
-    if ((await external.readActiveRevisionId({ definition: input.definition })) !== previousActiveRevisionId) {
-      throw new BundlePublicationError("external_pointer_drift", "external active revision pointer does not match the expected previous pointer");
-    }
+    await assertExternalPointerMatches(external, input.definition, previousActiveRevisionId);
 
     failedStep = "active_pointer_update";
     pointerWriteAttempted = true;
@@ -418,6 +420,16 @@ function requiredDependency(dependencies, name) {
     throw new BundlePublicationError("dependency_configuration", `missing injected dependency "${name}"`);
   }
   return dependencies[name];
+}
+
+async function assertExternalPointerMatches(external, definition, expectedActiveRevisionId) {
+  const observedActiveRevisionId = await external.readActiveRevisionId({ definition });
+  if (observedActiveRevisionId !== expectedActiveRevisionId) {
+    throw new BundlePublicationError(
+      "external_pointer_drift",
+      "external active revision pointer does not match the expected previous pointer",
+    );
+  }
 }
 
 async function verifyReadBackSnapshot(snapshot, expected, validateSnapshot) {

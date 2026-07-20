@@ -22,6 +22,7 @@ This application layer has authenticated Remix resource routes consumed by the e
 | `validateDraft()` | draft revision ID | validation DTO |
 | `compilePreview()` | draft revision ID | validation, size, checksum, counts, active diff |
 | `compareDraftAgainstActive()` | draft revision ID | exact flag and structural differences |
+| `reviewPrebuiltBundleImport()` | canonical package, split canonical records, or raw JSON export plus declarative source mapping; explicit target mappings and Pilot Scope | immutable dry-run plan, source provenance, record-level issues, and confirmation token; no writes |
 | `prepareDraftPublication()` | draft revision ID | read-only local preflight; no publication writes |
 | `publishDraftRevision()` | draft revision ID, publication ID, exact confirmation | guarded dev-only command; disabled unless server composition is explicitly enabled |
 | `prepareRevisionRollback()` | superseded revision ID | read-only rollback preflight; recompiles the immutable revision configuration without writes |
@@ -85,5 +86,42 @@ Every route calls the existing Shopify embedded-app `authenticate.admin(request)
 | `POST` | `/app/bundle-admin/revisions/:revisionId/rollback-readiness` | `prepareRevisionRollback` |
 | `POST` | `/app/bundle-admin/revisions/:revisionId/rollback` | `rollbackPublishedRevision` (explicitly disabled by default) |
 | `POST` | `/app/bundle-admin/revisions/:revisionId/compare-active` | `compareDraftAgainstActive` |
+| `POST` | `/app/bundle-admin/prebuilt-imports/review` | `reviewPrebuiltBundleImport` (authenticated, read-only dry-run) |
+| `POST` | `/app/bundle-admin/prebuilt-imports/execute` | `executePrebuiltBundleImport` (authenticated, exact re-review confirmation, disabled by default) |
+
+The guarded pre-built execution route never trusts a client-supplied plan. It
+re-parses and re-reviews the complete import package, recalculates the target
+fingerprint and confirmation token, and requires
+`IMPORT:<import_id>:<confirmation_token>`. The current Shopify server composition
+supplies a Shop-metafield-backed ledger with `compareDigest` CAS and the resumable
+target writer only when
+`BUNDLE_ADMIN_PREBUILT_IMPORT_EXECUTION_ENABLED=true`. The default remains
+fail-closed with `422 UNSUPPORTED_CAPABILITY`, and the UI still exposes review only.
+An exact retry may re-review an existing parent binding only when the
+BundleDefinition ID, Product GID, and Variant GID all match the reviewed target;
+all other existing parent ownership remains a blocking conflict.
+
+The review route also accepts `raw_source_export` together with
+`source_mapping_profile`, `mappings`, `pilot_scope`, and `import_id`. This path
+uses the data-only `prebuilt_bundle_source_mapping.v1` converter, returns raw-export
+and mapping-profile fingerprints, and never infers Shopify GIDs or target mappings.
+The execution route intentionally does not accept raw exports; execution still
+requires a canonical package or canonical split fields to be re-reviewed through
+the guarded server command.
+
+## Controlled development-store import rehearsal
+
+The 2026-07-20 rehearsal used `scripts/execute-dev-prebuilt-import-rehearsal.mjs`
+against the development app/store and dedicated `*_import_rehearsal_v1` carriers.
+It verified complete target read-back, completed-ledger idempotency, and the
+fail-closed recovery classification for a retained staged-Definition failure. A
+second exact invocation returned `already_completed`; the failed record remained
+`requires_target_reconciliation` and was not automatically resumed.
+
+The rehearsal script batches independent GraphQL mutation fields only to reduce
+Shopify CLI transport instability. It does not replace the server command's ordered,
+resumable target writer. The normal route remains disabled unless
+`BUNDLE_ADMIN_PREBUILT_IMPORT_EXECUTION_ENABLED=true`, and the current UI continues
+to expose review rather than execution.
 
 Success uses `{ "ok": true, "data": ... }`. Failures use `{ "ok": false, "error": { "code", "message", "details" } }`. Status mapping is `400` malformed input, `401`/`403` authentication failure, `404` not found, `409` conflict or immutable revision, `422` validation or compilation failure, and `500` unexpected server error.

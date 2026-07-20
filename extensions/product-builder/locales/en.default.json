@@ -11,5 +11,8 @@
     "bundle_discount": "Bundle Discount 5%",
     "final_total": "Final Total",
     "add_master_kit": "Add Master Kit"
+  },
+  "prebuilt_bundle": {
+    "quantity_one_at_a_time": "Pre-built bundles must be added one at a time."
   }
 }

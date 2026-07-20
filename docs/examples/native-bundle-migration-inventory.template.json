@@ -1,0 +1,29 @@
+{
+  "schema_version": "native_bundle_migration_inventory.v1",
+  "target": {
+    "store_domain": "REPLACE.myshopify.com"
+  },
+  "products": [
+    {
+      "relationship_owner_app": "REPLACE_WITH_OWNER_APP_NAME",
+      "product": {
+        "id": "gid://shopify/Product/REPLACE",
+        "title": "REPLACE",
+        "combinedListingRole": "PARENT",
+        "variants": {
+          "nodes": [
+            {
+              "id": "gid://shopify/ProductVariant/REPLACE",
+              "title": "REPLACE",
+              "sku": "REPLACE",
+              "requiresComponents": true,
+              "productVariantComponents": {
+                "nodes": []
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

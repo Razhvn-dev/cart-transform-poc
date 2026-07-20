@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 /**
- * Creates the four POC test products on a dev store and updates the
- * hardcoded variant IDs in the cart transform function.
+ * Creates the POC test products on a dev store and updates the hardcoded
+ * Variant IDs in the Cart Transform Function.
+ *
+ * This script deliberately does not create Shopify native bundle component
+ * relationships or set requiresComponents. Cart Transform `expand` is the
+ * only bundle authority in the locked Option C architecture.
  *
  * Usage:
  *   node scripts/seed-test-products.mjs --store your-store.myshopify.com
@@ -130,41 +134,6 @@ const SET_COMPONENT_INVENTORY_MUTATION = `mutation SetComponentInventory($input:
   }
 }`;
 
-const SET_MASTER_REQUIRES_COMPONENTS_MUTATION = `mutation SetRequiresComponents($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-  productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-    productVariants {
-      id
-      requiresComponents
-    }
-    userErrors {
-      field
-      message
-    }
-  }
-}`;
-
-const UPDATE_BUNDLE_COMPONENTS_MUTATION = `mutation UpdateBundleComponents($input: [ProductVariantRelationshipUpdateInput!]!) {
-  productVariantRelationshipBulkUpdate(input: $input) {
-    parentProductVariants {
-      id
-      requiresComponents
-      productVariantComponents(first: 10) {
-        nodes {
-          id
-          quantity
-          productVariant {
-            id
-          }
-        }
-      }
-    }
-    userErrors {
-      field
-      message
-    }
-  }
-}`;
-
 function parseArgs() {
   const storeIndex = process.argv.indexOf("--store");
   if (storeIndex === -1 || !process.argv[storeIndex + 1]) {
@@ -190,8 +159,9 @@ function runStoreQuery(store, query, variables = {}, allowMutations = false) {
       command += " --allow-mutations";
     }
 
+    const attempts = allowMutations ? 1 : 3;
     let lastError;
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
         const stdout = execSync(command, {
           encoding: "utf8",
@@ -200,8 +170,8 @@ function runStoreQuery(store, query, variables = {}, allowMutations = false) {
         return JSON.parse(stdout);
       } catch (error) {
         lastError = error;
-        if (attempt < 3) {
-          console.log(`  Retry ${attempt}/3 after network error...`);
+        if (attempt < attempts) {
+          console.log(`  Retry read-only request ${attempt}/${attempts} after network error...`);
         }
       }
     }
@@ -274,80 +244,6 @@ function ensureProduct(store, { title, key }) {
   const inventoryItemId = created.variants.nodes[0]?.inventoryItem?.id;
   console.log(`✓ Created product: ${title} (${variantId})`);
   return { title, key, productId: created.id, variantId, inventoryItemId };
-}
-
-function getMasterProductId(store) {
-  const product = findProductByTitle(store, "Master Kit Test");
-  if (!product?.id) {
-    throw new Error("Could not find Master Kit Test product");
-  }
-  return product.id;
-}
-
-function configureBundleComponents(store, variantMap) {
-  const masterProductId = getMasterProductId(store);
-
-  const requiresComponentsResult = runStoreQuery(
-    store,
-    SET_MASTER_REQUIRES_COMPONENTS_MUTATION,
-    {
-      productId: masterProductId,
-      variants: [
-        {
-          id: variantMap.MASTER,
-          requiresComponents: true,
-        },
-      ],
-    },
-    true,
-  );
-
-  const requiresComponentsPayload =
-    requiresComponentsResult?.productVariantsBulkUpdate;
-  if (requiresComponentsPayload?.userErrors?.length) {
-    throw new Error(
-      `Failed to set requiresComponents: ${requiresComponentsPayload.userErrors
-        .map((error) => error.message)
-        .join(", ")}`,
-    );
-  }
-
-  const relationshipsResult = runStoreQuery(
-    store,
-    UPDATE_BUNDLE_COMPONENTS_MUTATION,
-    {
-      input: [
-        {
-          parentProductVariantId: variantMap.MASTER,
-          removeAllProductVariantRelationships: true,
-          productVariantRelationshipsToCreate: [
-            { id: variantMap.EFI, quantity: 1 },
-            { id: variantMap.FUEL, quantity: 1 },
-            { id: variantMap.COIL, quantity: 1 },
-          ],
-        },
-      ],
-    },
-    true,
-  );
-
-  const relationshipsPayload =
-    relationshipsResult?.productVariantRelationshipBulkUpdate;
-  if (relationshipsPayload?.userErrors?.length) {
-    throw new Error(
-      `Failed to configure bundle components: ${relationshipsPayload.userErrors
-        .map((error) => error.message)
-        .join(", ")}`,
-    );
-  }
-
-  const components =
-    relationshipsPayload?.parentProductVariants?.[0]?.productVariantComponents
-      ?.nodes ?? [];
-  console.log(`\nConfigured bundle components (${components.length}):`);
-  for (const component of components) {
-    console.log(`  ${component.productVariant.id} x ${component.quantity}`);
-  }
 }
 
 function getActiveLocation(store) {
@@ -499,17 +395,8 @@ function main() {
   }
 
   updateFunctionVariantIds(results);
-  try {
-    configureBundleComponents(store, results);
-  } catch (error) {
-    if (error.message.includes("already owned by another App")) {
-      console.log(
-        "\nBundle components are already owned by another app; keeping existing POC-01 bundle configuration.",
-      );
-    } else {
-      throw error;
-    }
-  }
+  console.log("\nNative Shopify bundle relationships were not created.");
+  console.log("Cart Transform expand remains the only bundle authority.");
 
   console.log("\nDone. Start the app with:");
   console.log(`  shopify app dev --store ${store}`);

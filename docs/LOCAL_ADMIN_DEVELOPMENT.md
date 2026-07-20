@@ -14,7 +14,7 @@ From the repository root, run:
 npm run dev:local
 ```
 
-This starts the local Remix server through Shopify CLI with:
+This starts the local Remix server through the project-pinned Shopify CLI with:
 
 - `shopify.app.local.toml`
 - development app `cart-transform-poc-dev`
@@ -22,13 +22,14 @@ This starts the local Remix server through Shopify CLI with:
 - `FUNCTION_PROFILE=production`
 - `--use-localhost`
 - `--no-update`
+- `https://localhost:3001`
 
 Open the preview URL printed by Shopify CLI in the same browser that is logged
 in to the development store. Stop the command with `Ctrl+C` when finished.
 
 `--no-update` uses the localhost URL from the local TOML and prevents the CLI
 from updating the remote app configuration. `--use-localhost` makes the
-browser load the app securely from `https://localhost:3000` on this computer.
+browser load the app securely from `https://localhost:3001` on this computer.
 Shopify Admin blocks embedded HTTP pages; the CLI proxy provides the local
 certificate. The preview does not create a Sealos image or run
 `shopify app deploy`. The local configuration deliberately declares no
@@ -43,7 +44,7 @@ For Remix startup, route compilation, or non-embedded diagnostics only, run:
 npm run dev:web
 ```
 
-Then open `http://localhost:3000`. This command does not invoke Shopify CLI or
+Then open `http://localhost:3001`. This command does not invoke Shopify CLI or
 contact Shopify. Embedded authenticated routes require the Shopify CLI preview
 command above because they need a real Admin session.
 

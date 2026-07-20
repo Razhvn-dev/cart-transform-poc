@@ -22,6 +22,9 @@ import {
   getDraftEditorHydrationKey,
   getEnvelopeError,
   getStructuredConfigurationEntities,
+  removeStructuredConfigurationEntity,
+  duplicateStructuredConfigurationEntity,
+  createStructuredConfigurationEntity,
   isPersistedDraftConfiguration,
   parseConfigurationDocument,
   updateStructuredConfiguration,
@@ -272,6 +275,101 @@ export default function BundleAdminDetailPage() {
     applyStructuredEdit(section, entityKey, { [field]: parsed }, groupKey);
   }
 
+  function updatePresetSelection(groupKey: string, optionKey: string) {
+    if (!selectedPreset) return;
+    const selections = objectValue(selectedPreset.selections);
+    applyStructuredEdit("presets", stringValue(selectedPreset.preset_id), {
+      selections: { ...selections, [groupKey]: optionKey },
+    });
+  }
+
+  function updateRuleCondition(conditionIndex: number, field: "group_key" | "option_key", value: string) {
+    if (!selectedRule) return;
+    const conditions = asObjectArray(selectedRule.when);
+    if (!conditions[conditionIndex]) return;
+    const nextConditions = conditions.map((condition, index) => index === conditionIndex
+      ? { ...condition, [field]: value }
+      : condition);
+    applyStructuredEdit("compatibility_rules", stringValue(selectedRule.rule_id), { when: nextConditions });
+  }
+
+  function updateRuleTarget(field: "group_key" | "option_key", value: string) {
+    if (!selectedRule) return;
+    const target = { ...objectValue(selectedRule.target) };
+    if (field === "option_key" && value === "") delete target.option_key;
+    else target[field] = value;
+    applyStructuredEdit("compatibility_rules", stringValue(selectedRule.rule_id), { target });
+  }
+
+  function togglePresetLockedSelection(groupKey: string, checked: boolean) {
+    if (!selectedPreset) return;
+    const lockedSelections = stringArrayValue(selectedPreset.locked_selections);
+    const next = checked
+      ? [...new Set([...lockedSelections, groupKey])]
+      : lockedSelections.filter((value) => value !== groupKey);
+    applyStructuredEdit("presets", stringValue(selectedPreset.preset_id), { locked_selections: next });
+  }
+
+  function toggleRuleOptionList(field: "allowed_option_keys" | "denied_option_keys" | "required_option_keys", optionKey: string, checked: boolean) {
+    if (!selectedRule) return;
+    const values = stringArrayValue(selectedRule[field]);
+    const next = checked
+      ? [...new Set([...values, optionKey])]
+      : values.filter((value) => value !== optionKey);
+    applyStructuredEdit("compatibility_rules", stringValue(selectedRule.rule_id), { [field]: next });
+  }
+
+  function removeStructuredEntity(
+    section: "groups" | "options" | "presets" | "compatibility_rules",
+    entityKey: string,
+    groupKey?: string,
+  ) {
+    const configuration = readConfiguration();
+    if (!configuration) return;
+    const result = removeStructuredConfigurationEntity(configuration, { section, entityKey, groupKey });
+    if (result.error || !result.value) {
+      const referenceSummary = result.references?.slice(0, 3)
+        .map((reference) => `${reference.source} ${reference.sourceId}.${reference.field}`)
+        .join(", ");
+      setClientError([result.error ?? "Unable to remove the configuration entity.", referenceSummary].filter(Boolean).join(" References: "));
+      return;
+    }
+    setClientError(null);
+    setNotice("Local configuration updated. Save draft to persist this change.");
+    setConfigurationText(JSON.stringify(result.value, null, 2));
+  }
+
+  function duplicateStructuredEntity(section: "presets" | "compatibility_rules", entityKey: string) {
+    const configuration = readConfiguration();
+    if (!configuration) return;
+    const result = duplicateStructuredConfigurationEntity(configuration, section, entityKey);
+    if (result.error || !result.value) {
+      setClientError(result.error ?? "Unable to duplicate the configuration entity.");
+      return;
+    }
+    setClientError(null);
+    setNotice(`Created local ${section === "presets" ? "preset" : "rule"} copy. Save draft to persist it.`);
+    setConfigurationText(JSON.stringify(result.value, null, 2));
+  }
+
+  function createStructuredEntity(section: "presets" | "compatibility_rules") {
+    const configuration = readConfiguration();
+    if (!configuration) return;
+    const result = createStructuredConfigurationEntity(configuration, section);
+    if (result.error || !result.value || !result.createdEntity) {
+      setClientError(result.error ?? "Unable to create the configuration entity.");
+      return;
+    }
+    const identity = section === "presets"
+      ? stringValue(result.createdEntity.preset_id)
+      : stringValue(result.createdEntity.rule_id);
+    setClientError(null);
+    setNotice(`Created local ${section === "presets" ? "inactive preset" : "draft rule"}. Save draft to persist it.`);
+    setConfigurationText(JSON.stringify(result.value, null, 2));
+    if (section === "presets") setSelectedPresetId(identity);
+    else setSelectedRuleId(identity);
+  }
+
   function saveDefinition() {
     if (!bundleDefinitionId) return;
     submit("save-definition", `/app/bundle-admin/bundles/${bundleDefinitionId}`, "PUT", {
@@ -450,6 +548,9 @@ export default function BundleAdminDetailPage() {
                       <TextField label="Maximum selections" type="number" value={numberValue(selectedGroup.max)} onChange={(value) => applyIntegerEdit("groups", stringValue(selectedGroup.group_key), "max", value)} autoComplete="off" disabled={requestInFlight} />
                     </InlineStack>
                     <Checkbox label="Required group" checked={booleanValue(selectedGroup.required)} onChange={(checked) => applyStructuredEdit("groups", stringValue(selectedGroup.group_key), { required: checked })} disabled={requestInFlight} />
+                    <InlineStack align="end">
+                      <Button tone="critical" onClick={() => removeStructuredEntity("groups", stringValue(selectedGroup.group_key))} disabled={requestInFlight}>Remove unreferenced group</Button>
+                    </InlineStack>
                   </BlockStack> : null}
                   {selectedGroup && selectedOption ? <BlockStack gap="200">
                     <Text as="h4" variant="headingSm">Options</Text>
@@ -460,27 +561,101 @@ export default function BundleAdminDetailPage() {
                       <TextField label="Price cents snapshot" type="number" value={numberValue(selectedOption.price_cents_snapshot)} onChange={(value) => applyIntegerEdit("options", stringValue(selectedOption.option_key), "price_cents_snapshot", value, stringValue(selectedGroup.group_key))} autoComplete="off" disabled={requestInFlight} />
                     </InlineStack>
                     <Checkbox label="Option active" checked={booleanValue(selectedOption.active)} onChange={(checked) => applyStructuredEdit("options", stringValue(selectedOption.option_key), { active: checked }, stringValue(selectedGroup.group_key))} disabled={requestInFlight} />
+                    <InlineStack align="end">
+                      <Button tone="critical" onClick={() => removeStructuredEntity("options", stringValue(selectedOption.option_key), stringValue(selectedGroup.group_key))} disabled={requestInFlight}>Remove unreferenced option</Button>
+                    </InlineStack>
                   </BlockStack> : null}
-                  {selectedPreset ? <BlockStack gap="200">
+                  <InlineStack align="space-between" blockAlign="center">
                     <Text as="h4" variant="headingSm">Presets</Text>
+                    <Button onClick={() => createStructuredEntity("presets")} disabled={requestInFlight}>Create inactive preset</Button>
+                  </InlineStack>
+                  {selectedPreset ? <BlockStack gap="200">
                     <Select label="Preset" options={structuredEntities.presets.map((preset) => ({ label: `${stringValue(preset.label) || stringValue(preset.preset_id)} (${stringValue(preset.preset_id)})`, value: stringValue(preset.preset_id) }))} value={stringValue(selectedPreset.preset_id)} onChange={setSelectedPresetId} disabled={requestInFlight} />
                     <InlineStack gap="200" wrap>
                       <TextField label="Preset label" value={stringValue(selectedPreset.label)} onChange={(value) => applyStructuredEdit("presets", stringValue(selectedPreset.preset_id), { label: value })} autoComplete="off" disabled={requestInFlight} />
                       <TextField label="Display order" type="number" value={numberValue(selectedPreset.display_order)} onChange={(value) => applyIntegerEdit("presets", stringValue(selectedPreset.preset_id), "display_order", value)} autoComplete="off" disabled={requestInFlight} />
+                      <TextField label="Description" value={stringValue(selectedPreset.description)} onChange={(value) => applyStructuredEdit("presets", stringValue(selectedPreset.preset_id), { description: value })} autoComplete="off" disabled={requestInFlight} />
                     </InlineStack>
                     <InlineStack gap="400" wrap>
                       <Checkbox label="Preset active" checked={booleanValue(selectedPreset.active)} onChange={(checked) => applyStructuredEdit("presets", stringValue(selectedPreset.preset_id), { active: checked })} disabled={requestInFlight} />
                       <Checkbox label="Validate compatibility" checked={booleanValue(selectedPreset.validate_compatibility)} onChange={(checked) => applyStructuredEdit("presets", stringValue(selectedPreset.preset_id), { validate_compatibility: checked })} disabled={requestInFlight} />
                     </InlineStack>
+                    <Text as="p" variant="bodySm" tone="subdued">Preset selections</Text>
+                    {structuredEntities.groups.map((group) => {
+                      const groupKey = stringValue(group.group_key);
+                      const groupOptions = asObjectArray(group.options);
+                      return <Select
+                        key={groupKey}
+                        label={stringValue(group.label) || groupKey}
+                        options={groupOptions.map((option) => ({ label: stringValue(option.label) || stringValue(option.option_key), value: stringValue(option.option_key) }))}
+                        value={stringValue(objectValue(selectedPreset.selections)[groupKey])}
+                        onChange={(value) => updatePresetSelection(groupKey, value)}
+                        disabled={requestInFlight}
+                      />;
+                    })}
+                    <Text as="p" variant="bodySm" tone="subdued">Locked selections</Text>
+                    <InlineStack gap="300" wrap>
+                      {structuredEntities.groups.map((group) => {
+                        const groupKey = stringValue(group.group_key);
+                        return <Checkbox key={groupKey} label={stringValue(group.label) || groupKey} checked={stringArrayValue(selectedPreset.locked_selections).includes(groupKey)} onChange={(checked) => togglePresetLockedSelection(groupKey, checked)} disabled={requestInFlight} />;
+                      })}
+                    </InlineStack>
+                    <InlineStack gap="200" align="end">
+                      <Button onClick={() => duplicateStructuredEntity("presets", stringValue(selectedPreset.preset_id))} disabled={requestInFlight}>Duplicate preset as inactive</Button>
+                      <Button tone="critical" onClick={() => removeStructuredEntity("presets", stringValue(selectedPreset.preset_id))} disabled={requestInFlight}>Remove preset</Button>
+                    </InlineStack>
                   </BlockStack> : null}
-                  {selectedRule ? <BlockStack gap="200">
+                  <InlineStack align="space-between" blockAlign="center">
                     <Text as="h4" variant="headingSm">Compatibility rules</Text>
+                    <Button onClick={() => createStructuredEntity("compatibility_rules")} disabled={requestInFlight}>Create draft rule</Button>
+                  </InlineStack>
+                  {selectedRule ? <BlockStack gap="200">
                     <Select label="Rule" options={structuredEntities.compatibilityRules.map((rule) => ({ label: stringValue(rule.rule_id), value: stringValue(rule.rule_id) }))} value={stringValue(selectedRule.rule_id)} onChange={setSelectedRuleId} disabled={requestInFlight} />
                     <InlineStack gap="200" wrap>
                       <TextField label="Priority" type="number" value={numberValue(selectedRule.priority)} onChange={(value) => applyIntegerEdit("compatibility_rules", stringValue(selectedRule.rule_id), "priority", value)} autoComplete="off" disabled={requestInFlight} />
                       <Select label="Status" options={["draft", "active", "archived"].map((value) => ({ label: value, value }))} value={stringValue(selectedRule.status)} onChange={(value) => applyStructuredEdit("compatibility_rules", stringValue(selectedRule.rule_id), { status: value })} disabled={requestInFlight} />
                       <Select label="Effect" options={["allow", "deny", "requires", "excludes", "visibility", "fallback"].map((value) => ({ label: value, value }))} value={stringValue(selectedRule.effect)} onChange={(value) => applyStructuredEdit("compatibility_rules", stringValue(selectedRule.rule_id), { effect: value })} disabled={requestInFlight} />
                       <Select label="Match" options={["all", "any"].map((value) => ({ label: value, value }))} value={stringValue(selectedRule.match)} onChange={(value) => applyStructuredEdit("compatibility_rules", stringValue(selectedRule.rule_id), { match: value })} disabled={requestInFlight} />
+                    </InlineStack>
+                    <Text as="p" variant="bodySm" tone="subdued">Rule target</Text>
+                    <InlineStack gap="200" wrap>
+                      <Select label="Target group" options={structuredEntities.groups.map((group) => ({ label: stringValue(group.label) || stringValue(group.group_key), value: stringValue(group.group_key) }))} value={stringValue(objectValue(selectedRule.target).group_key)} onChange={(value) => updateRuleTarget("group_key", value)} disabled={requestInFlight} />
+                      <Select label="Target option" options={[{ label: "All options in group", value: "" }, ...asObjectArray(structuredEntities.groups.find((group) => group.group_key === objectValue(selectedRule.target).group_key)?.options).map((option) => ({ label: stringValue(option.label) || stringValue(option.option_key), value: stringValue(option.option_key) }))]} value={stringValue(objectValue(selectedRule.target).option_key)} onChange={(value) => updateRuleTarget("option_key", value)} disabled={requestInFlight} />
+                    </InlineStack>
+                    <Text as="p" variant="bodySm" tone="subdued">Rule conditions</Text>
+                    {asObjectArray(selectedRule.when).map((condition, index) => {
+                      const conditionGroupKey = stringValue(condition.group_key);
+                      const conditionGroup = structuredEntities.groups.find((group) => group.group_key === conditionGroupKey);
+                      return <InlineStack key={`${conditionGroupKey}-${index}`} gap="200" wrap>
+                        <Select label={`Condition ${index + 1} group`} options={structuredEntities.groups.map((group) => ({ label: stringValue(group.label) || stringValue(group.group_key), value: stringValue(group.group_key) }))} value={conditionGroupKey} onChange={(value) => updateRuleCondition(index, "group_key", value)} disabled={requestInFlight} />
+                        <Select label={`Condition ${index + 1} option`} options={asObjectArray(conditionGroup?.options).map((option) => ({ label: stringValue(option.label) || stringValue(option.option_key), value: stringValue(option.option_key) }))} value={stringValue(condition.option_key)} onChange={(value) => updateRuleCondition(index, "option_key", value)} disabled={requestInFlight} />
+                      </InlineStack>;
+                    })}
+                    <TextField label="Rule message" value={stringValue(selectedRule.message)} onChange={(value) => applyStructuredEdit("compatibility_rules", stringValue(selectedRule.rule_id), { message: value })} autoComplete="off" disabled={requestInFlight} />
+                    {selectedRule.effect === "visibility" ? <InlineStack gap="400" wrap>
+                      <Checkbox label="Visible" checked={booleanValue(selectedRule.visible)} onChange={(checked) => applyStructuredEdit("compatibility_rules", stringValue(selectedRule.rule_id), { visible: checked })} disabled={requestInFlight} />
+                      <Checkbox label="Component included" checked={booleanValue(selectedRule.component_included)} onChange={(checked) => applyStructuredEdit("compatibility_rules", stringValue(selectedRule.rule_id), { component_included: checked })} disabled={requestInFlight} />
+                    </InlineStack> : null}
+                    {(() => {
+                      const targetGroupKey = stringValue(objectValue(selectedRule.target).group_key);
+                      const targetGroup = structuredEntities.groups.find((group) => group.group_key === targetGroupKey);
+                      const targetOptions = asObjectArray(targetGroup?.options);
+                      if (!targetGroup || targetOptions.length === 0) return null;
+                      return <BlockStack gap="100">
+                        <Text as="p" variant="bodySm" tone="subdued">Target group option constraints</Text>
+                        <Select label="Fallback option" options={[{ label: "No fallback", value: "" }, ...targetOptions.map((option) => ({ label: stringValue(option.label) || stringValue(option.option_key), value: stringValue(option.option_key) }))]} value={stringValue(selectedRule.fallback_option_key)} onChange={(value) => applyStructuredEdit("compatibility_rules", stringValue(selectedRule.rule_id), { fallback_option_key: value || null })} disabled={requestInFlight} />
+                        {(["allowed_option_keys", "denied_option_keys", "required_option_keys"] as const).map((field) => <BlockStack key={field} gap="050">
+                          <Text as="p" variant="bodySm">{field}</Text>
+                          <InlineStack gap="300" wrap>{targetOptions.map((option) => {
+                            const optionKey = stringValue(option.option_key);
+                            return <Checkbox key={optionKey} label={stringValue(option.label) || optionKey} checked={stringArrayValue(selectedRule[field]).includes(optionKey)} onChange={(checked) => toggleRuleOptionList(field, optionKey, checked)} disabled={requestInFlight} />;
+                          })}</InlineStack>
+                        </BlockStack>)}
+                      </BlockStack>;
+                    })()}
+                    <InlineStack gap="200" align="end">
+                      <Button onClick={() => duplicateStructuredEntity("compatibility_rules", stringValue(selectedRule.rule_id))} disabled={requestInFlight}>Duplicate rule as draft</Button>
+                      <Button tone="critical" onClick={() => removeStructuredEntity("compatibility_rules", stringValue(selectedRule.rule_id))} disabled={requestInFlight}>Remove rule</Button>
                     </InlineStack>
                   </BlockStack> : null}
                 </BlockStack>
@@ -554,6 +729,14 @@ function numberValue(value: unknown) {
 
 function booleanValue(value: unknown) {
   return value === true;
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringArrayValue(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((candidate): candidate is string => typeof candidate === "string") : [];
 }
 
 function RevisionState({ label, revision, tone }: { label: string; revision: Revision | null; tone: "success" | "attention" }) {

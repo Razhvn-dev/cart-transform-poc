@@ -66,6 +66,62 @@ export function createBundleAdminRouteHandlers({ authenticateAdmin, service, get
       },
       invoke: (currentService, input) => currentService.createDraftRevision(input),
     }),
+    reviewPrebuiltBundleImport: (args) => execute(args, {
+      method: "POST",
+      authenticateAdmin,
+      getService,
+      input: async ({ request }) => {
+        const body = await jsonBody(request);
+        if (body.import_package !== undefined) {
+          if (typeof body.import_package !== "string" && !isPlainObject(body.import_package)) {
+            throw new BundleAdminRequestError("import_package must be a JSON string or object");
+          }
+          return { import_package: body.import_package };
+        }
+        if (body.raw_source_export !== undefined || body.source_mapping_profile !== undefined) {
+          return {
+            import_id: requiredString(body.import_id, "import_id"),
+            raw_source_export: requiredJsonContainer(body.raw_source_export, "raw_source_export"),
+            source_mapping_profile: requiredObject(body.source_mapping_profile, "source_mapping_profile"),
+            mappings: requiredArray(body.mappings, "mappings"),
+            pilot_scope: requiredObject(body.pilot_scope, "pilot_scope"),
+          };
+        }
+        return {
+          import_id: requiredString(body.import_id, "import_id"),
+          source_records: requiredArray(body.source_records, "source_records"),
+          mappings: requiredArray(body.mappings, "mappings"),
+          pilot_scope: requiredObject(body.pilot_scope, "pilot_scope"),
+        };
+      },
+      invoke: (currentService, input) => currentService.reviewPrebuiltBundleImport(input),
+    }),
+    executePrebuiltBundleImport: (args) => execute(args, {
+      method: "POST",
+      authenticateAdmin,
+      getService,
+      input: async ({ request }) => {
+        const body = await jsonBody(request);
+        const shared = {
+          confirmation_token: requiredString(body.confirmation_token, "confirmation_token"),
+          confirmation: requiredString(body.confirmation, "confirmation"),
+        };
+        if (body.import_package !== undefined) {
+          if (typeof body.import_package !== "string" && !isPlainObject(body.import_package)) {
+            throw new BundleAdminRequestError("import_package must be a JSON string or object");
+          }
+          return { ...shared, import_package: body.import_package };
+        }
+        return {
+          ...shared,
+          import_id: requiredString(body.import_id, "import_id"),
+          source_records: requiredArray(body.source_records, "source_records"),
+          mappings: requiredArray(body.mappings, "mappings"),
+          pilot_scope: requiredObject(body.pilot_scope, "pilot_scope"),
+        };
+      },
+      invoke: (currentService, input) => currentService.executePrebuiltBundleImport(input),
+    }),
     cloneActiveRevision: (args) => execute(args, {
       method: "POST",
       authenticateAdmin,
@@ -240,6 +296,18 @@ function requiredObject(value, name) {
   return value;
 }
 
+function requiredArray(value, name) {
+  if (!Array.isArray(value)) throw new BundleAdminRequestError(`${name} must be an array`);
+  return value;
+}
+
+function requiredJsonContainer(value, name) {
+  if (!Array.isArray(value) && !isPlainObject(value)) {
+    throw new BundleAdminRequestError(`${name} must be an array or object`);
+  }
+  return value;
+}
+
 function actor(session) {
   return typeof session?.shop === "string" && session.shop !== "" ? session.shop : "authenticated-admin";
 }
@@ -276,7 +344,7 @@ function applicationFailureDto(dto) {
       message: dto.message,
       details: dto.details ?? null,
     });
-    return failure(500, dto.code, "Shopify persistence did not confirm the draft save", dto.details);
+    return failure(500, dto.code, "Shopify persistence did not confirm the requested operation", dto.details);
   }
   return failure(500, "INTERNAL_ERROR", "unexpected Bundle Admin server error");
 }

@@ -10,6 +10,14 @@ import { run as runStage5 } from "../run.dev.stage5.js";
 import { run as runStage6 } from "../run.dev.stage6.js";
 import { run as runStage7 } from "../run.dev.stage7.js";
 import { run as runStage8 } from "../run.dev.stage8.js";
+import { run as runPrebuiltObserve } from "../run.dev.prebuilt-observe.js";
+import { run as runPrebuiltResolveObserve } from "../run.dev.prebuilt-resolve-observe.js";
+import { run as runPrebuiltCandidate } from "../run.dev.prebuilt-candidate.js";
+import { run as runPrebuiltStaticProbe } from "../run.dev.prebuilt-static-probe.js";
+import { run as runPrebuiltParseStaticProbe } from "../run.dev.prebuilt-parse-static-probe.js";
+import { run as runPrebuiltCandidateBuildStaticProbe } from "../run.dev.prebuilt-candidate-build-static-probe.js";
+import { run as runPrebuiltCandidateImportStaticProbe } from "../run.dev.prebuilt-candidate-import-static-probe.js";
+import { run as runPrebuiltMetadataLookupStaticProbe } from "../run.dev.prebuilt-metadata-lookup-static-probe.js";
 import { run as runProduction } from "../run.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -64,6 +72,13 @@ function expectNoDevTokens(text) {
   expect(text).not.toContain("bundle-runtime.validator");
   expect(text).not.toContain("bundle-runtime.resolver");
   expect(text).not.toContain("master-kit-config.v1");
+  expect(text).not.toContain("prebuilt-bundle-import");
+  expect(text).not.toContain("prebuilt-bundle-runtime");
+  expect(text).not.toContain("prebuilt-bundle-cart-metadata");
+  expect(text).not.toContain("prebuilt_bundle_runtime_assignment");
+  expect(text).not.toContain("prebuilt Bundle runtime preparation");
+  expect(text).not.toContain("buildPrebuiltBundleFunctionResult");
+  expect(text).not.toContain("legacy-paid-app");
   expect(text).not.toContain("candidate");
 }
 
@@ -249,6 +264,168 @@ describe("Cart Transform entry isolation", () => {
     expect(stage8Entry).not.toContain("bundle-runtime.shadow-comparison");
   });
 
+  it("keeps the future pre-built Function-input composition out of every active entry", () => {
+    const entries = [
+      "run.js",
+      "run.dev.js",
+      "run.dev.stage2.js",
+      "run.dev.stage3.js",
+      "run.dev.stage4.js",
+      "run.dev.stage5.js",
+      "run.dev.stage6.js",
+      "run.dev.stage7.js",
+      "run.dev.stage8.js",
+    ];
+
+    entries.forEach((entry) => {
+      expect(source(entry)).not.toContain("prebuilt-bundle-runtime.function-input");
+      expect(source(entry)).not.toContain("prebuilt-bundle-runtime.function-candidate");
+    });
+  });
+
+  it("keeps the pre-built observe entry limited to parsing and Shared Core output", () => {
+    const entry = source("run.dev.prebuilt-observe.js");
+    expect(entry).toContain("prebuilt-bundle-runtime.function-input");
+    expect(entry).not.toContain("prebuilt-bundle-runtime.function-candidate");
+    expect(entry).not.toContain("prebuilt-bundle-runtime.local-candidate");
+  });
+
+  it("keeps the pre-built resolve observe entry limited to candidate calculation and Shared Core output", () => {
+    const entry = source("run.dev.prebuilt-resolve-observe.js");
+    expect(entry).toContain("prebuilt-bundle-runtime.function-candidate");
+    expect(entry).not.toContain("candidate.result");
+    expect(entry).not.toContain("return buildPrebuilt");
+  });
+
+  it("keeps the final pre-built candidate entry dev-only and isolates its promotion helper", () => {
+    const entry = source("run.dev.prebuilt-candidate.js");
+    expect(entry).toContain("prebuilt-bundle-runtime.candidate-promotion");
+    expect(entry).toContain("prebuilt-bundle-runtime.function-candidate");
+    expect(source("run.js")).not.toContain("prebuilt-bundle-runtime.candidate-promotion");
+  });
+
+  it("keeps the static hosted probe dev-only and out of production entries", () => {
+    const entry = source("run.dev.prebuilt-static-probe.js");
+    expect(entry).toContain("PREBUILT_PARENT_VARIANT_GID");
+    expect(entry).not.toContain("prebuiltRuntimeMappingMetafield");
+    expect(source("run.js")).not.toContain("prebuilt-static-probe");
+    expect(source("run.core.js")).not.toContain("51571819708694");
+
+    const result = runPrebuiltStaticProbe({
+      cart: {
+        lines: [{
+          id: "gid://shopify/CartLine/prebuilt-probe",
+          quantity: 1,
+          merchandise: {
+            __typename: "ProductVariant",
+            id: "gid://shopify/ProductVariant/51571819708694",
+            product: { id: "gid://shopify/Product/10627515777302" },
+          },
+        }],
+      },
+    });
+    expect(result.operations).toHaveLength(1);
+  });
+
+  it("keeps the parse + static hosted probe isolated from production entries", () => {
+    const entry = source("run.dev.prebuilt-parse-static-probe.js");
+    expect(entry).toContain("extractPrebuiltBundleRuntimeFunctionInput");
+    expect(entry).toContain("run.dev.prebuilt-static-probe");
+    expect(source("run.js")).not.toContain("prebuilt-parse-static-probe");
+
+    const result = runPrebuiltParseStaticProbe({
+      cart: {
+        lines: [{
+          id: "gid://shopify/CartLine/prebuilt-parse-probe",
+          quantity: 1,
+          merchandise: {
+            __typename: "ProductVariant",
+            id: "gid://shopify/ProductVariant/51571819708694",
+            product: { id: "gid://shopify/Product/10627515777302" },
+          },
+        }],
+      },
+    });
+    expect(result.operations).toHaveLength(1);
+  });
+
+  it("keeps the candidate-build + static hosted probe isolated from production entries", () => {
+    const entry = source("run.dev.prebuilt-candidate-build-static-probe.js");
+    expect(entry).toContain("buildPrebuiltBundleRuntimeFunctionCandidate");
+    expect(entry).toContain("run.dev.prebuilt-static-probe");
+    expect(source("run.js")).not.toContain("prebuilt-candidate-build-static-probe");
+
+    const result = runPrebuiltCandidateBuildStaticProbe({
+      cart: {
+        lines: [{
+          id: "gid://shopify/CartLine/prebuilt-candidate-build-probe",
+          quantity: 1,
+          merchandise: {
+            __typename: "ProductVariant",
+            id: "gid://shopify/ProductVariant/51571819708694",
+            product: {
+              id: "gid://shopify/Product/10627515777302",
+              prebuiltRuntimeMappingMetafield: null,
+              prebuiltRuntimeSnapshotMetafield: null,
+            },
+          },
+        }],
+      },
+    });
+    expect(result.operations[0].expand.expandedCartItems).toHaveLength(3);
+  });
+
+  it("keeps the candidate-import + static hosted probe isolated from production entries", () => {
+    const entry = source("run.dev.prebuilt-candidate-import-static-probe.js");
+    expect(entry).toContain("typeof buildPrebuiltBundleRuntimeFunctionCandidate");
+    expect(entry).not.toContain("buildPrebuiltBundleRuntimeFunctionCandidate(input)");
+    expect(entry).toContain("run.dev.prebuilt-static-probe");
+    expect(source("run.js")).not.toContain("prebuilt-candidate-import-static-probe");
+
+    const result = runPrebuiltCandidateImportStaticProbe({
+      cart: {
+        lines: [{
+          id: "gid://shopify/CartLine/prebuilt-candidate-import-probe",
+          quantity: 1,
+          merchandise: {
+            __typename: "ProductVariant",
+            id: "gid://shopify/ProductVariant/51571819708694",
+            product: { id: "gid://shopify/Product/10627515777302" },
+          },
+        }],
+      },
+    });
+    expect(result.operations[0].expand.expandedCartItems).toHaveLength(3);
+  });
+
+  it("keeps the metadata/lookup + static hosted probe isolated from production entries", () => {
+    const entry = source("run.dev.prebuilt-metadata-lookup-static-probe.js");
+    expect(entry).toContain("observePrebuiltBundleCartMetadata");
+    expect(entry).toContain("findPrebuiltBundleRuntimeMapping");
+    expect(entry).not.toContain("preparePrebuiltBundleRuntimeSelections");
+    expect(entry).not.toContain("buildPrebuiltBundleFunctionResult");
+    expect(source("run.js")).not.toContain("prebuilt-metadata-lookup-static-probe");
+
+    const result = runPrebuiltMetadataLookupStaticProbe({
+      cart: {
+        lines: [{
+          id: "gid://shopify/CartLine/prebuilt-metadata-lookup-probe",
+          quantity: 1,
+          merchandise: {
+            __typename: "ProductVariant",
+            id: "gid://shopify/ProductVariant/51571819708694",
+            product: {
+              id: "gid://shopify/Product/10627515777302",
+              prebuiltRuntimeMappingMetafield: null,
+              prebuiltRuntimeSnapshotMetafield: null,
+            },
+          },
+        }],
+      },
+    });
+    expect(result.operations[0].expand.expandedCartItems).toHaveLength(3);
+  });
+
   it("returns identical production and dev output for Standard and Advanced builds", () => {
     const inputs = [
       functionInput({
@@ -273,6 +450,9 @@ describe("Cart Transform entry isolation", () => {
       expect(JSON.stringify(runStage6(input))).toBe(JSON.stringify(runProduction(input)));
       expect(JSON.stringify(runStage7(input))).toBe(JSON.stringify(runProduction(input)));
       expect(JSON.stringify(runStage8(input))).toBe(JSON.stringify(runProduction(input)));
+      expect(JSON.stringify(runPrebuiltObserve(input))).toBe(JSON.stringify(runProduction(input)));
+      expect(JSON.stringify(runPrebuiltResolveObserve(input))).toBe(JSON.stringify(runProduction(input)));
+      expect(JSON.stringify(runPrebuiltCandidate(input))).toBe(JSON.stringify(runProduction(input)));
     });
   });
 });

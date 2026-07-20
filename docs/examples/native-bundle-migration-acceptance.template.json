@@ -1,0 +1,23 @@
+{
+  "schema_version": "native_bundle_migration_acceptance.v1",
+  "before_product": "REPLACE_WITH_READ_ONLY_PRODUCT_EVIDENCE",
+  "after_product": "REPLACE_WITH_READ_ONLY_PRODUCT_EVIDENCE",
+  "cleanup": {
+    "owner_app": "REPLACE",
+    "performed_by_relationship_owner_app": false
+  },
+  "product_edit": {
+    "image_saved": false,
+    "price_saved": false,
+    "compare_at_price_saved": false,
+    "reload_verified": false
+  },
+  "combined_listing": {
+    "edit_saved": false
+  },
+  "runtime_regression": {
+    "cart_single_parent_line": false,
+    "checkout_components_expanded": false,
+    "pilot_acceptance_passed": false
+  }
+}

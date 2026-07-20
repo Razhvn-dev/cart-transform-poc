@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aces.example/schemas/prebuilt-bundle-source-mapping.v1.schema.json",
+  "title": "Pre-built Bundle Source Mapping V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source_system", "fields", "components"],
+  "properties": {
+    "schema_version": { "const": "prebuilt_bundle_source_mapping.v1" },
+    "source_system": { "type": "string", "minLength": 1 },
+    "records_path": { "$ref": "#/$defs/path" },
+    "fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_bundle_id", "product_series_key", "parent_product_gid", "parent_variant_gid"],
+      "properties": {
+        "source_bundle_id": { "$ref": "#/$defs/path" },
+        "source_checksum": { "$ref": "#/$defs/path" },
+        "product_series_key": { "$ref": "#/$defs/path" },
+        "parent_product_gid": { "$ref": "#/$defs/path" },
+        "parent_variant_gid": { "$ref": "#/$defs/path" }
+      }
+    },
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "variant_gid"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "variant_gid": { "$ref": "#/$defs/path" },
+        "quantity": { "$ref": "#/$defs/path" },
+        "default_quantity": { "const": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z_$][A-Za-z0-9_$-]*(\\.[A-Za-z_$][A-Za-z0-9_$-]*)*$"
+    }
+  }
+}

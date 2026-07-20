@@ -11,6 +11,10 @@ export function observeRuntimeSnapshotInput(input) {
 }
 
 export function parseRuntimeSnapshotMetafield(metafield) {
+  return parseJsonObjectMetafield(metafield);
+}
+
+export function parseJsonObjectMetafield(metafield) {
   if (!metafield) return null;
 
   if (isPlainObject(metafield.jsonValue)) {

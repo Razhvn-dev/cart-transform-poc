@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import {
   assertProfileAppConfigAllowed,
   extDir,
+  restoreProductionFunctionProfile,
+  stageFunctionProfileForDeployment,
   withTemporaryFunctionProfile,
 } from "../../../../scripts/function-profile.mjs";
 
@@ -31,6 +33,15 @@ describe("Function profile deployment safety", () => {
     ["Stage 6 profile + shopify.app.dev.toml", "bisect-stage-6", "shopify.app.dev.toml"],
     ["Stage 7 profile + shopify.app.dev.toml", "bisect-stage-7", "shopify.app.dev.toml"],
     ["Stage 8 profile + shopify.app.dev.toml", "bisect-stage-8", "shopify.app.dev.toml"],
+    ["pre-built observe profile + shopify.app.dev.toml", "prebuilt-observe", "shopify.app.dev.toml"],
+    ["pre-built resolve observe profile + shopify.app.dev.toml", "prebuilt-resolve-observe", "shopify.app.dev.toml"],
+    ["pre-built candidate profile + shopify.app.dev.toml", "prebuilt-candidate", "shopify.app.dev.toml"],
+    ["pre-built static probe profile + shopify.app.dev.toml", "prebuilt-static-probe", "shopify.app.dev.toml"],
+    ["pre-built query static probe profile + shopify.app.dev.toml", "prebuilt-query-static-probe", "shopify.app.dev.toml"],
+    ["pre-built parse static probe profile + shopify.app.dev.toml", "prebuilt-parse-static-probe", "shopify.app.dev.toml"],
+    ["pre-built candidate-build static probe profile + shopify.app.dev.toml", "prebuilt-candidate-build-static-probe", "shopify.app.dev.toml"],
+    ["pre-built candidate-import static probe profile + shopify.app.dev.toml", "prebuilt-candidate-import-static-probe", "shopify.app.dev.toml"],
+    ["pre-built metadata lookup static probe profile + shopify.app.dev.toml", "prebuilt-metadata-lookup-static-probe", "shopify.app.dev.toml"],
   ])("allows %s", (_name, profile, appConfig) => {
     expect(() => assertProfileAppConfigAllowed(profile, appConfig)).not.toThrow();
   });
@@ -97,6 +108,107 @@ describe("Function profile deployment safety", () => {
       "bisect-stage-8",
       "shopify.app.toml",
     )).toThrow(/Refusing FUNCTION_PROFILE=bisect-stage-8/);
+  });
+
+  it("rejects the pre-built observe profile with the Custom Distribution App config", () => {
+    expect(() => assertProfileAppConfigAllowed(
+      "prebuilt-observe",
+      "shopify.app.toml",
+    )).toThrow(/Refusing FUNCTION_PROFILE=prebuilt-observe/);
+  });
+
+  it("rejects the pre-built resolve observe profile with the Custom Distribution App config", () => {
+    expect(() => assertProfileAppConfigAllowed(
+      "prebuilt-resolve-observe",
+      "shopify.app.toml",
+    )).toThrow(/Refusing FUNCTION_PROFILE=prebuilt-resolve-observe/);
+  });
+
+  it("rejects the pre-built candidate profile with the Custom Distribution App config", () => {
+    expect(() => assertProfileAppConfigAllowed(
+      "prebuilt-candidate",
+      "shopify.app.toml",
+    )).toThrow(/Refusing FUNCTION_PROFILE=prebuilt-candidate/);
+  });
+
+  it("rejects the pre-built static probe profile with the Custom Distribution App config", () => {
+    expect(() => assertProfileAppConfigAllowed(
+      "prebuilt-static-probe",
+      "shopify.app.toml",
+    )).toThrow(/Refusing FUNCTION_PROFILE=prebuilt-static-probe/);
+  });
+
+  it("rejects the pre-built query static probe profile with the Custom Distribution App config", () => {
+    expect(() => assertProfileAppConfigAllowed(
+      "prebuilt-query-static-probe",
+      "shopify.app.toml",
+    )).toThrow(/Refusing FUNCTION_PROFILE=prebuilt-query-static-probe/);
+  });
+
+  it("rejects the pre-built parse static probe profile with the Custom Distribution App config", () => {
+    expect(() => assertProfileAppConfigAllowed(
+      "prebuilt-parse-static-probe",
+      "shopify.app.toml",
+    )).toThrow(/Refusing FUNCTION_PROFILE=prebuilt-parse-static-probe/);
+  });
+
+  it("rejects the pre-built candidate-build static probe profile with the Custom Distribution App config", () => {
+    expect(() => assertProfileAppConfigAllowed(
+      "prebuilt-candidate-build-static-probe",
+      "shopify.app.toml",
+    )).toThrow(/Refusing FUNCTION_PROFILE=prebuilt-candidate-build-static-probe/);
+  });
+
+  it("rejects the pre-built candidate-import static probe profile with the Custom Distribution App config", () => {
+    expect(() => assertProfileAppConfigAllowed(
+      "prebuilt-candidate-import-static-probe",
+      "shopify.app.toml",
+    )).toThrow(/Refusing FUNCTION_PROFILE=prebuilt-candidate-import-static-probe/);
+  });
+
+  it("rejects the pre-built metadata lookup static probe profile with the Custom Distribution App config", () => {
+    expect(() => assertProfileAppConfigAllowed(
+      "prebuilt-metadata-lookup-static-probe",
+      "shopify.app.toml",
+    )).toThrow(/Refusing FUNCTION_PROFILE=prebuilt-metadata-lookup-static-probe/);
+  });
+
+  it("uses the isolated pre-built query during candidate-build static probing", async () => {
+    await withTemporaryFunctionProfile(
+      "prebuilt-candidate-build-static-probe",
+      { appConfig: "shopify.app.dev.toml" },
+      async () => {
+        expect(activeQueryText()).toContain("prebuiltRuntimeMappingMetafield");
+        expect(activeQueryText()).toContain("prebuiltRuntimeSnapshotMetafield");
+      },
+    );
+
+    expectActiveQueryProductionClean();
+  });
+
+  it("uses the production-clean query during the pre-built static probe", async () => {
+    await withTemporaryFunctionProfile(
+      "prebuilt-static-probe",
+      { appConfig: "shopify.app.dev.toml" },
+      async () => {
+        expectActiveQueryProductionClean();
+      },
+    );
+
+    expectActiveQueryProductionClean();
+  });
+
+  it("uses the pre-built metafield query only during the query static probe", async () => {
+    await withTemporaryFunctionProfile(
+      "prebuilt-query-static-probe",
+      { appConfig: "shopify.app.dev.toml" },
+      async () => {
+        expect(activeQueryText()).toContain("prebuiltRuntimeMappingMetafield");
+        expect(activeQueryText()).toContain("prebuiltRuntimeSnapshotMetafield");
+      },
+    );
+
+    expectActiveQueryProductionClean();
   });
 
   it("keeps the production query active during Stage 2 profile work", async () => {
@@ -185,6 +297,50 @@ describe("Function profile deployment safety", () => {
         expect(activeQueryText()).toContain("runtimeSnapshotDevMetafield");
       },
     );
+
+    expectActiveQueryProductionClean();
+  });
+
+  it("uses the isolated pre-built observe query only during pre-built observe profile work", async () => {
+    await withTemporaryFunctionProfile(
+      "prebuilt-observe",
+      { appConfig: "shopify.app.dev.toml" },
+      async () => {
+        expect(activeQueryText()).toContain("prebuilt_bundle_runtime_mapping_v1");
+        expect(activeQueryText()).toContain("prebuiltRuntimeMappingMetafield");
+      },
+    );
+
+    expectActiveQueryProductionClean();
+  });
+
+  it("uses the same isolated query during pre-built resolution observation", async () => {
+    await withTemporaryFunctionProfile(
+      "prebuilt-resolve-observe",
+      { appConfig: "shopify.app.dev.toml" },
+      async () => {
+        expect(activeQueryText()).toContain("prebuiltRuntimeSnapshotMetafield");
+      },
+    );
+
+    expectActiveQueryProductionClean();
+  });
+
+  it("stages the matching pre-built candidate query for no-build deployment packaging", () => {
+    try {
+      const profile = stageFunctionProfileForDeployment(
+        "prebuilt-candidate",
+        { appConfig: "shopify.app.dev.toml" },
+      );
+
+      expect(profile.entry).toBe("src/run.dev.prebuilt-candidate.js");
+      expect(activeQueryText()).toContain("prebuiltRuntimeMappingMetafield");
+      expect(activeQueryText()).toContain("prebuiltRuntimeSnapshotMetafield");
+    } finally {
+      // withTemporaryFunctionProfile is intentionally not used here: staging
+      // must survive until Shopify CLI has packaged the Function.
+      restoreProductionFunctionProfile();
+    }
 
     expectActiveQueryProductionClean();
   });

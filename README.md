@@ -1,7 +1,8 @@
 # ACES Shopify Bundle Builder
 
-This repository contains the ACES Shopify Bundle Builder and its Cart Transform
-proof of concept. The project includes:
+This repository contains the ACES Shopify Bundle Engine and its Cart Transform
+proof of concept. It supports two customer entry points: a configurable Bundle
+Builder and pre-built bundle SKUs. The project includes:
 
 - a Polaris embedded Bundle Admin for development-only bundle configuration;
 - the shared bundle compiler and Runtime Snapshot V1 modules;
@@ -16,10 +17,18 @@ parent line, while Checkout and Orders expand into component lines. Do not use
 ## Current status
 
 The current engineering baseline is documented in
-[`Project_Master_Context_V5.3_Current_Baseline.md`](./Project_Master_Context_V5.3_Current_Baseline.md).
+[`Project_Master_Context_V5.4_Current_Baseline.md`](./Project_Master_Context_V5.4_Current_Baseline.md).
 Production Function authority remains hard-coded. Bundle Admin publishing is
 not exposed; the Admin UI currently edits and previews development-only draft
 revisions.
+
+Development version `cart-transform-poc-dev-40` is the frozen known-good baseline for
+the approved `prebuilt-bundle-test` SKU: Cart keeps one parent line and Checkout displays
+the expected three components at `$100.00`. This baseline uses a bounded fixed projection;
+generic mapping/Snapshot-driven pre-built expansion is not yet accepted in Shopify's hosted
+runtime. Production authority remains unchanged. See the
+[`pre-built Checkout handoff`](./docs/PREBUILT_CHECKOUT_EXPANSION_HANDOFF_2026-07-20.md)
+before attempting further Function work.
 
 ## Prerequisites
 
@@ -95,7 +104,9 @@ bundle publication plan.
 
 ## Project documentation
 
-- [Current engineering baseline](./Project_Master_Context_V5.3_Current_Baseline.md)
+- [Current engineering baseline](./Project_Master_Context_V5.4_Current_Baseline.md)
+- [Two purchase paths requirements](./docs/BUNDLE_ENGINE_TWO_PURCHASE_PATHS_REQUIREMENTS_V1.md)
+- [Pre-built Checkout expansion handoff](./docs/PREBUILT_CHECKOUT_EXPANSION_HANDOFF_2026-07-20.md)
 - [Bundle Admin API](./app/domains/bundle-admin/BUNDLE_ADMIN_BACKEND_API_V1.md)
 - [Local Admin development](./docs/LOCAL_ADMIN_DEVELOPMENT.md)
 - [Devbox/Sealos release workflow](./docs/SEALOS_DEVBOX_RELEASE_WORKFLOW.md)

@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aces.example/schemas/prebuilt-bundle-pilot-acceptance.v1.schema.json",
+  "title": "Pre-built Bundle Pilot Acceptance Evidence V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "pilot_scope", "evidence"],
+  "properties": {
+    "schema_version": { "const": "prebuilt_bundle_pilot_acceptance.v1" },
+    "pilot_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["store_domain", "product_series_key", "parent_variant_gid", "bundle_quantity", "expected_components"],
+      "properties": {
+        "store_domain": { "type": "string", "minLength": 1 },
+        "product_series_key": { "type": "string", "minLength": 1 },
+        "parent_variant_gid": { "$ref": "#/$defs/productVariantGid" },
+        "bundle_quantity": { "type": "integer", "minimum": 1 },
+        "expected_components": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/componentQuantity" }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cart", "checkout", "order", "inventory", "fulfillment", "rollback"],
+      "properties": {
+        "cart": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["parent_variant_gid", "parent_line_count", "parent_quantity", "component_line_count", "bundle_metadata_v1_present"],
+              "properties": {
+                "parent_variant_gid": { "$ref": "#/$defs/productVariantGid" },
+                "parent_line_count": { "type": "integer", "minimum": 0 },
+                "parent_quantity": { "type": "integer", "minimum": 0 },
+                "component_line_count": { "type": "integer", "minimum": 0 },
+                "bundle_metadata_v1_present": { "type": "boolean" }
+              }
+            }
+          ]
+        },
+        "checkout": { "$ref": "#/$defs/componentEvidenceOrNull" },
+        "order": { "$ref": "#/$defs/componentEvidenceOrNull" },
+        "inventory": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["parent_variant_gid", "parent_delta", "component_deltas"],
+              "properties": {
+                "parent_variant_gid": { "$ref": "#/$defs/productVariantGid" },
+                "parent_delta": { "type": "integer" },
+                "component_deltas": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/componentDelta" }
+                }
+              }
+            }
+          ]
+        },
+        "fulfillment": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["decision", "observed_and_accepted"],
+              "properties": {
+                "decision": { "enum": ["unresolved", "main_sku_only", "component_level"] },
+                "observed_and_accepted": { "type": "boolean" }
+              }
+            }
+          ]
+        },
+        "rollback": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["known_good_version", "procedure_documented", "regression_verified"],
+              "properties": {
+                "known_good_version": { "type": "string", "minLength": 1 },
+                "procedure_documented": { "type": "boolean" },
+                "regression_verified": { "type": "boolean" }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "productVariantGid": {
+      "type": "string",
+      "pattern": "^gid://shopify/ProductVariant/[0-9]+$"
+    },
+    "componentQuantity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["variant_gid", "quantity"],
+      "properties": {
+        "variant_gid": { "$ref": "#/$defs/productVariantGid" },
+        "quantity": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "componentDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["variant_gid", "delta"],
+      "properties": {
+        "variant_gid": { "$ref": "#/$defs/productVariantGid" },
+        "delta": { "type": "integer" }
+      }
+    },
+    "componentEvidenceOrNull": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["components", "total_matches_expected"],
+          "properties": {
+            "components": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/componentQuantity" }
+            },
+            "total_matches_expected": { "type": "boolean" }
+          }
+        }
+      ]
+    }
+  }
+}

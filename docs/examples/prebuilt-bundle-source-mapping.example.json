@@ -1,0 +1,18 @@
+{
+  "schema_version": "prebuilt_bundle_source_mapping.v1",
+  "source_system": "replace-with-paid-app-name",
+  "records_path": "payload.bundles",
+  "fields": {
+    "source_bundle_id": "external.id",
+    "source_checksum": "external.checksum",
+    "product_series_key": "series.key",
+    "parent_product_gid": "parent.product_gid",
+    "parent_variant_gid": "parent.variant_gid"
+  },
+  "components": {
+    "path": "items",
+    "variant_gid": "shopify.variant_gid",
+    "quantity": "quantity",
+    "default_quantity": 1
+  }
+}

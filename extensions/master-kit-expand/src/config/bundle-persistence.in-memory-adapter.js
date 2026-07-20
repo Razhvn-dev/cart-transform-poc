@@ -5,12 +5,14 @@ import {
   assertSnapshotCasInput,
   normalizeBundlePersistenceError,
 } from "./bundle-persistence.adapter.js";
+import { validatePrebuiltBundleExpandProjection } from "./prebuilt-bundle-expand-projection.js";
 
 export function createInMemoryBundlePersistenceAdapter({
   definitions = [],
   revisions = [],
   snapshots = {},
   publications = {},
+  projections = {},
   capabilities = {},
   failures = {},
 } = {}) {
@@ -18,6 +20,7 @@ export function createInMemoryBundlePersistenceAdapter({
   const revisionStore = new Map(revisions.map((item) => [item.revision_id, clone(item)]));
   const snapshotStore = new Map(Object.entries(clone(snapshots)));
   const publicationStore = new Map(Object.entries(clone(publications)));
+  const projectionStore = new Map(Object.entries(clone(projections)));
   const supported = { active_revision_cas: true, snapshot_checksum_cas: true, ...capabilities };
   const calls = [];
 
@@ -50,6 +53,34 @@ export function createInMemoryBundlePersistenceAdapter({
     readActiveRevisionId(bundleDefinitionId) {
       calls.push("readActiveRevisionId");
       return required(definitionStore, bundleDefinitionId, "BundleDefinition").active_revision_id;
+    },
+    readPrebuiltExpandProjection(bundleDefinitionId) {
+      calls.push("readPrebuiltExpandProjection");
+      return clone(projectionStore.get(bundleDefinitionId) ?? null);
+    },
+    writePrebuiltExpandProjection(input) {
+      calls.push("writePrebuiltExpandProjection");
+      failIfConfigured(failures, "writePrebuiltExpandProjection", "WRITE_FAILED");
+      const current = projectionStore.get(input.bundle_definition_id) ?? null;
+      if ((current?.checksum ?? null) !== input.expected_previous_projection_checksum) {
+        throw new BundlePersistenceError("CHECKSUM_MISMATCH", "previous projection checksum does not match");
+      }
+      if (input.projection?.checksum !== input.target_projection_checksum
+        || validatePrebuiltBundleExpandProjection(input.projection).length > 0) {
+        throw new BundlePersistenceError("CHECKSUM_MISMATCH", "target projection is invalid");
+      }
+      projectionStore.set(input.bundle_definition_id, clone(input.projection));
+      return clone(input.projection);
+    },
+    restorePreviousPrebuiltExpandProjection(input) {
+      calls.push("restorePreviousPrebuiltExpandProjection");
+      const current = projectionStore.get(input.bundle_definition_id) ?? null;
+      if (current?.checksum !== input.target_projection_checksum) {
+        throw new BundlePersistenceError("CHECKSUM_MISMATCH", "target projection checksum does not match persisted value");
+      }
+      if (input.previous_projection === null) projectionStore.delete(input.bundle_definition_id);
+      else projectionStore.set(input.bundle_definition_id, clone(input.previous_projection));
+      return clone(input.previous_projection);
     },
     writeRuntimeSnapshot(input) {
       calls.push("writeRuntimeSnapshot");
@@ -114,7 +145,7 @@ export function createInMemoryBundlePersistenceAdapter({
       else snapshotStore.set(input.bundle_definition_id, clone(input.previous_snapshot));
       return clone(input.previous_snapshot);
     },
-    state: { definitionStore, revisionStore, snapshotStore, publicationStore, calls },
+    state: { definitionStore, revisionStore, snapshotStore, projectionStore, publicationStore, calls },
   };
   return assertBundlePersistenceAdapter(adapter);
 }

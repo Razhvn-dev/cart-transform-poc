@@ -1,0 +1,30 @@
+{
+  "schema_version": "prebuilt_bundle_pilot_acceptance.v1",
+  "pilot_scope": {
+    "store_domain": "huang-mvqquz1p.myshopify.com",
+    "product_series_key": "replace-with-approved-series",
+    "parent_variant_gid": "gid://shopify/ProductVariant/REPLACE",
+    "bundle_quantity": 1,
+    "expected_components": [
+      {
+        "variant_gid": "gid://shopify/ProductVariant/REPLACE",
+        "quantity": 1
+      }
+    ]
+  },
+  "evidence": {
+    "cart": null,
+    "checkout": null,
+    "order": null,
+    "inventory": null,
+    "fulfillment": {
+      "decision": "unresolved",
+      "observed_and_accepted": false
+    },
+    "rollback": {
+      "known_good_version": "40",
+      "procedure_documented": false,
+      "regression_verified": false
+    }
+  }
+}

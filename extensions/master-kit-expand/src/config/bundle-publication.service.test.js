@@ -302,7 +302,7 @@ describe("local staged bundle publication service", () => {
     expect(result.warnings).toContain("compensation_failed");
   });
 
-  it("detects external pointer drift before switching the active revision", async () => {
+  it("detects external pointer drift before any Snapshot write", async () => {
     const current = revision({ id: firstRevisionId, number: 1, status: "published" });
     const draft = revision({ id: secondRevisionId, number: 2, status: "draft" });
     const driver = driverForCurrentRevision();
@@ -314,8 +314,27 @@ describe("local staged bundle publication service", () => {
     });
 
     expect(result).toMatchObject({ success: false, failed_step: "external_pointer_drift" });
-    expect(result.compensation).toMatchObject({ success: true, steps: ["snapshot_restored"] });
+    expect(result.compensation).toMatchObject({ attempted: false, success: true, steps: [] });
+    expect(driver.state.calls).not.toContain("write_snapshot");
     expect(driver.state.activeRevisionIds.get(definitionId)).toBe(firstRevisionId);
+  });
+
+  it("rechecks pointer drift after Snapshot read-back and compensates that write", async () => {
+    const current = revision({ id: firstRevisionId, number: 1, status: "published" });
+    const draft = revision({ id: secondRevisionId, number: 2, status: "draft" });
+    const driver = driverForCurrentRevision();
+    let reads = 0;
+    const result = await publishDraftRevision(publishInput({ revisions: [current, draft] }), {
+      ...driver.dependencies,
+      readActiveRevisionId() {
+        reads += 1;
+        return reads === 1 ? firstRevisionId : "3b9b0e1d-0f9f-4ea4-8bb4-1f2dc1aef704";
+      },
+    });
+
+    expect(result).toMatchObject({ success: false, failed_step: "external_pointer_drift" });
+    expect(result.compensation).toMatchObject({ success: true, steps: ["snapshot_restored"] });
+    expect(driver.state.calls).toContain("write_snapshot");
   });
 
   it("rejects a parity gate failure before any external write", async () => {

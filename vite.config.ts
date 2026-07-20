@@ -20,6 +20,11 @@ if (
 const host = new URL(process.env.SHOPIFY_APP_URL || "http://localhost")
   .hostname;
 
+// Shopify CLI's localhost proxy connects to the Remix server over IPv4. On
+// Windows, Vite otherwise resolves localhost to IPv6 only, leaving the proxy
+// with a listening port that cannot serve the embedded app.
+const serverHost = host === "localhost" ? "127.0.0.1" : undefined;
+
 let hmrConfig;
 if (host === "localhost") {
   hmrConfig = {
@@ -39,6 +44,7 @@ if (host === "localhost") {
 
 export default defineConfig({
   server: {
+    host: serverHost,
     allowedHosts: [host],
     cors: {
       preflightContinue: true,
@@ -69,5 +75,17 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ["@shopify/app-bridge-react", "@shopify/polaris"],
+  },
+  test: {
+    // Shopify CLI mirrors extension sources here during `app dev`. Those files
+    // are preview artifacts, not a second copy of the project's test suite.
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/cypress/**",
+      "**/.{idea,git,cache,output,temp}/**",
+      "**/{karma,rollup,webpack}.config.*",
+      "**/.shopify/**",
+    ],
   },
 }) satisfies UserConfig;

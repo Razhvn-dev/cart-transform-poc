@@ -4,6 +4,10 @@ import { parseBundleDefinition, parseBundleRevision } from "../../../extensions/
 import { BundlePersistenceError, normalizeBundlePersistenceError } from "../../../extensions/master-kit-expand/src/config/bundle-persistence.adapter.js";
 import { compileRuntimeSnapshot } from "../../../extensions/master-kit-expand/src/config/bundle-runtime.compiler.js";
 import { assertRuntimeSnapshotMetafieldSize } from "../../../extensions/master-kit-expand/src/config/bundle-runtime.snapshot-size.js";
+import { createPrebuiltBundleImportPlan } from "../../../extensions/master-kit-expand/src/config/prebuilt-bundle-import.plan.js";
+import { createPrebuiltBundleImportPlanFromPackage, parsePrebuiltBundleImportPackage } from "../../../extensions/master-kit-expand/src/config/prebuilt-bundle-import.package.js";
+import { createDeclarativePrebuiltBundleSourceAdapter } from "../../../extensions/master-kit-expand/src/config/prebuilt-bundle-import.declarative-source.js";
+import { createPrebuiltBundleImportPackageFromSource } from "../../../extensions/master-kit-expand/src/config/prebuilt-bundle-import.source-package.js";
 
 export const BUNDLE_ADMIN_ERROR_CODES = Object.freeze([
   "NOT_FOUND",
@@ -31,6 +35,10 @@ export function createBundleAdminService({
   rollbackService = null,
   publicationDriver = null,
   publicationEnabled = false,
+  prebuiltImportExecutionEnabled = false,
+  prebuiltImportExecutor = null,
+  prebuiltImportLedger = null,
+  createPrebuiltImportTargetWriter = null,
   resolvePromotionEvidence = null,
   compile = compileRuntimeSnapshot,
   sizeGuard = assertRuntimeSnapshotMetafieldSize,
@@ -41,13 +49,17 @@ export function createBundleAdminService({
 
   return {
     async listBundles() {
-      const definitions = await repository.listBundleDefinitions();
-      return Promise.all(definitions
-        .sort((left, right) => left.slug.localeCompare(right.slug))
-        .map(async (definition) => toBundleSummary(
-          definition,
-          await repository.listRevisionsByDefinition(definition.bundle_definition_id),
-        )));
+      try {
+        const definitions = await repository.listBundleDefinitions();
+        return await Promise.all(definitions
+          .sort((left, right) => left.slug.localeCompare(right.slug))
+          .map(async (definition) => toBundleSummary(
+            definition,
+            await repository.listRevisionsByDefinition(definition.bundle_definition_id),
+          )));
+      } catch (error) {
+        throw normalizeApplicationError(error);
+      }
     },
 
     async getBundleDetail({ bundle_definition_id: bundleDefinitionId }) {
@@ -261,6 +273,140 @@ export function createBundleAdminService({
       return compareRevisionWithActive(persistence, repository, revision);
     },
 
+    // This is a read-only review command. It never creates a Definition or
+    // Revision and cannot reach any Snapshot/pointer publication operation.
+    async reviewPrebuiltBundleImport({
+      import_id: importId,
+      source_records: sourceRecords,
+      mappings,
+      pilot_scope: pilotScope,
+      import_package: importPackage,
+      raw_source_export: rawSourceExport,
+      source_mapping_profile: sourceMappingProfile,
+    }) {
+      try {
+        const definitions = await repository.listBundleDefinitions();
+        const existingParentVariants = definitions.map((definition) => definition.parent_binding?.variant_gid).filter(Boolean);
+        const existingParentBindings = definitions.map((definition) => ({
+          bundle_definition_id: definition.bundle_definition_id,
+          product_gid: definition.parent_binding?.product_gid,
+          variant_gid: definition.parent_binding?.variant_gid,
+        }));
+        if (importPackage !== undefined) {
+          const result = createPrebuiltBundleImportPlanFromPackage(importPackage, {
+            existing_parent_variant_gids: existingParentVariants,
+            existing_parent_bindings: existingParentBindings,
+          });
+          if (!result.ok) {
+            throw new BundleAdminApplicationError("VALIDATION_FAILED", "import package is invalid", { errors: result.errors });
+          }
+          return result.plan;
+        }
+        if (rawSourceExport !== undefined || sourceMappingProfile !== undefined) {
+          if (rawSourceExport === undefined || sourceMappingProfile === undefined) {
+            throw new BundleAdminApplicationError(
+              "VALIDATION_FAILED",
+              "raw_source_export and source_mapping_profile must be supplied together",
+            );
+          }
+          const adapter = createDeclarativePrebuiltBundleSourceAdapter({
+            profile: sourceMappingProfile,
+            export_document: rawSourceExport,
+          });
+          const packageResult = await createPrebuiltBundleImportPackageFromSource({
+            adapter,
+            import_id: importId,
+            mappings,
+            pilot_scope: pilotScope,
+          });
+          if (!packageResult.ok) {
+            throw new BundleAdminApplicationError("VALIDATION_FAILED", "normalized import package is invalid", { errors: packageResult.errors });
+          }
+          const result = createPrebuiltBundleImportPlanFromPackage(packageResult.value, {
+            existing_parent_variant_gids: existingParentVariants,
+            existing_parent_bindings: existingParentBindings,
+          });
+          if (!result.ok) {
+            throw new BundleAdminApplicationError("VALIDATION_FAILED", "normalized import package is invalid", { errors: result.errors });
+          }
+          return {
+            ...result.plan,
+            source_export: adapter.source_export,
+            package_fingerprint: packageResult.fingerprint,
+          };
+        }
+        return createPrebuiltBundleImportPlan({
+          import_id: importId,
+          source_records: sourceRecords,
+          mappings,
+          pilot_scope: pilotScope,
+          existing_parent_variant_gids: existingParentVariants,
+          existing_parent_bindings: existingParentBindings,
+        });
+      } catch (error) {
+        throw normalizeApplicationError(error);
+      }
+    },
+
+    async executePrebuiltBundleImport({
+      import_id: importId,
+      source_records: sourceRecords,
+      mappings,
+      pilot_scope: pilotScope,
+      import_package: importPackage,
+      confirmation_token: confirmationToken,
+      confirmation,
+    }) {
+      if (!prebuiltImportExecutionEnabled) {
+        throw new BundleAdminApplicationError("UNSUPPORTED_CAPABILITY", "pre-built import execution is disabled");
+      }
+      if (typeof prebuiltImportExecutor !== "function"
+        || typeof prebuiltImportLedger?.read !== "function"
+        || typeof prebuiltImportLedger?.write !== "function"
+        || typeof createPrebuiltImportTargetWriter !== "function") {
+        throw new BundleAdminApplicationError(
+          "UNSUPPORTED_CAPABILITY",
+          "pre-built import execution requires a persistent ledger and target writer",
+        );
+      }
+
+      let resolvedPilotScope = pilotScope;
+      if (importPackage !== undefined) {
+        const parsed = parsePrebuiltBundleImportPackage(importPackage);
+        if (!parsed.ok) {
+          throw new BundleAdminApplicationError("VALIDATION_FAILED", "import package is invalid", { errors: parsed.errors });
+        }
+        resolvedPilotScope = parsed.value.pilot_scope;
+      }
+      const plan = await this.reviewPrebuiltBundleImport({
+        import_id: importId,
+        source_records: sourceRecords,
+        mappings,
+        pilot_scope: resolvedPilotScope,
+        import_package: importPackage,
+      });
+      const expectedConfirmation = `IMPORT:${plan.import_id}:${plan.confirmation_token}`;
+      if (confirmationToken !== plan.confirmation_token || confirmation !== expectedConfirmation) {
+        throw new BundleAdminApplicationError("CONFLICT", "import confirmation does not match the server-reviewed plan");
+      }
+      if (plan.summary.ready_for_confirmation === 0) {
+        throw new BundleAdminApplicationError("VALIDATION_FAILED", "import plan has no records ready for execution");
+      }
+
+      try {
+        await assertExistingImportTargetsAreCompleted({ plan, ledger: prebuiltImportLedger });
+        return await prebuiltImportExecutor({
+          plan,
+          confirmation_token: confirmationToken,
+          ledger: prebuiltImportLedger,
+          create_target: createPrebuiltImportTargetWriter({ pilot_scope: resolvedPilotScope }),
+          now,
+        });
+      } catch (error) {
+        throw normalizeApplicationError(error);
+      }
+    },
+
     // This is deliberately a read-only preflight. Publishing remains unavailable
     // until a separately authorized command can supply real promotion evidence.
     async prepareDraftPublication({ revision_id: revisionId }) {
@@ -418,6 +564,24 @@ export function createBundleAdminService({
       }, publicationDriver);
     },
   };
+}
+
+async function assertExistingImportTargetsAreCompleted({ plan, ledger }) {
+  for (const record of plan.records.filter((candidate) => candidate.status === "ready_for_confirmation")) {
+    if (record.existing_target !== true) continue;
+    const existing = await ledger.read(record.source_identity);
+    const exactCompleted = existing?.state === "completed"
+      && existing.import_id === plan.import_id
+      && existing.source_fingerprint === record.source_fingerprint
+      && existing.target_bundle_definition_id === record.target.bundle_definition_id
+      && existing.target_fingerprint === record.target_fingerprint;
+    if (!exactCompleted) {
+      throw new BundleAdminApplicationError(
+        "CONFLICT",
+        `existing import target ${record.target.bundle_definition_id} has no matching completed ledger record`,
+      );
+    }
+  }
 }
 
 export function toApplicationErrorDto(error) {

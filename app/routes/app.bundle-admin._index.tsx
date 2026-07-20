@@ -39,7 +39,10 @@ export default function BundleAdminListPage() {
   return (
     <Page
       title="Bundle configurations"
-      secondaryActions={[{ content: "Refresh", onAction: () => fetcher.load("/app/bundle-admin/bundles") }]}
+      secondaryActions={[
+        { content: "Review pre-built import", url: "/app/bundle-admin/prebuilt-imports" },
+        { content: "Refresh", onAction: () => fetcher.load("/app/bundle-admin/bundles") },
+      ]}
     >
       <TitleBar title="Bundle configurations" />
       <BlockStack gap="400">

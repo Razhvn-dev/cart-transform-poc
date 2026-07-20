@@ -6,6 +6,7 @@ import { publishDraftRevision } from "../../../extensions/master-kit-expand/src/
 import { createInMemoryPublicationDriver } from "../../../extensions/master-kit-expand/src/config/bundle-publication.in-memory-driver.js";
 import { compileRuntimeSnapshot } from "../../../extensions/master-kit-expand/src/config/bundle-runtime.compiler.js";
 import { masterKitConfigV1 } from "../../../extensions/master-kit-expand/src/config/fixtures/master-kit-config.v1.js";
+import { importFixture } from "../../../extensions/master-kit-expand/src/config/prebuilt-bundle-import.plan.test-fixture.js";
 
 const definitionId = "f6cf6c74-90a6-4f15-9e4f-2dbeb2fc4b89";
 const publishedRevisionId = "0a9b0e1d-0f9f-4ea4-8bb4-1f2dc1aef701";
@@ -59,7 +60,13 @@ function revision({ id = publishedRevisionId, number = 1, status = "published" }
   };
 }
 
-function service({ definitions = [], revisions = [], publications = {}, sizeGuard, compile } = {}) {
+function service({
+  definitions = [], revisions = [], publications = {}, sizeGuard, compile,
+  prebuiltImportExecutionEnabled = false,
+  prebuiltImportExecutor = null,
+  prebuiltImportLedger = null,
+  createPrebuiltImportTargetWriter = null,
+} = {}) {
   const persistence = createInMemoryBundlePersistenceAdapter({ definitions, revisions, publications });
   return {
     persistence,
@@ -69,6 +76,10 @@ function service({ definitions = [], revisions = [], publications = {}, sizeGuar
       publicationService: publishDraftRevision,
       compile,
       sizeGuard,
+      prebuiltImportExecutionEnabled,
+      prebuiltImportExecutor,
+      prebuiltImportLedger,
+      createPrebuiltImportTargetWriter,
       now: () => "2026-07-15T01:00:00Z",
       idFactory: (() => {
         let serial = 10;
@@ -81,6 +92,164 @@ function service({ definitions = [], revisions = [], publications = {}, sizeGuar
 describe("bundle admin application service", () => {
   it("returns an empty bundle list", async () => {
     await expect(service().app.listBundles()).resolves.toEqual([]);
+  });
+
+  it("reviews a pre-built import without invoking persistence writes or publication", async () => {
+    const { persistence, app } = service();
+    const result = await app.reviewPrebuiltBundleImport({
+      import_id: "11111111-1111-4111-8111-000000000001",
+      source_records: [],
+      mappings: [],
+      pilot_scope: {
+        schema_version: "prebuilt_bundle_pilot_scope.v1",
+        pilot_scope_id: "22222222-2222-4222-8222-000000000001",
+        store_domain: "huang-mvqquz1p.myshopify.com",
+        approved_product_series_keys: ["aces-efi"],
+        approved_parent_variant_gids: [masterKitConfigV1.parent.variant_gid],
+      },
+    });
+
+    expect(result).toMatchObject({ mode: "dry_run", summary: { total: 0 } });
+    expect(persistence.state.calls).not.toContain("writeBundleDefinition");
+    expect(persistence.state.calls).not.toContain("writeRevision");
+    expect(persistence.state.calls).not.toContain("writeRuntimeSnapshot");
+  });
+
+  it("reviews a canonical import package without invoking persistence writes or publication", async () => {
+    const { persistence, app } = service();
+    const result = await app.reviewPrebuiltBundleImport({ import_package: importFixture() });
+
+    expect(result).toMatchObject({ mode: "dry_run", summary: { ready_for_confirmation: 1 } });
+    expect(persistence.state.calls).not.toContain("writeBundleDefinition");
+    expect(persistence.state.calls).not.toContain("writeRevision");
+    expect(persistence.state.calls).not.toContain("writeRuntimeSnapshot");
+  });
+
+  it("normalizes and reviews a raw paid-app export without enabling execution", async () => {
+    const fixture = importFixture();
+    const source = fixture.source_records[0];
+    const { persistence, app } = service();
+    const result = await app.reviewPrebuiltBundleImport({
+      import_id: fixture.import_id,
+      raw_source_export: [{
+        external: { id: source.source_bundle_id, checksum: source.source_checksum },
+        series: source.product_series_key,
+        parent: source.parent_binding,
+        items: source.components,
+      }],
+      source_mapping_profile: {
+        schema_version: "prebuilt_bundle_source_mapping.v1",
+        source_system: source.source_system,
+        fields: {
+          source_bundle_id: "external.id",
+          source_checksum: "external.checksum",
+          product_series_key: "series",
+          parent_product_gid: "parent.product_gid",
+          parent_variant_gid: "parent.variant_gid",
+        },
+        components: { path: "items", variant_gid: "variant_gid", quantity: "quantity" },
+      },
+      mappings: fixture.mappings,
+      pilot_scope: fixture.pilot_scope,
+    });
+
+    expect(result).toMatchObject({
+      mode: "dry_run",
+      summary: { ready_for_confirmation: 1, rejected: 0 },
+      source_export: { collection_mode: "declarative_read_only_json_export", record_count: 1 },
+    });
+    expect(result.package_fingerprint).toMatch(/^[0-9a-f]{8}$/);
+    expect(persistence.state.calls).not.toContain("writeBundleDefinition");
+    expect(persistence.state.calls).not.toContain("writeRevision");
+    expect(persistence.state.calls).not.toContain("writeRuntimeSnapshot");
+  });
+
+  it("fails raw-source review before planning when its mapping profile is unsafe", async () => {
+    const { app } = service();
+    await expect(app.reviewPrebuiltBundleImport({
+      import_id: "11111111-1111-4111-8111-000000000001",
+      raw_source_export: [],
+      source_mapping_profile: {
+        schema_version: "prebuilt_bundle_source_mapping.v1",
+        source_system: "paid-app",
+        fields: {
+          source_bundle_id: "constructor.id",
+          product_series_key: "series",
+          parent_product_gid: "product_gid",
+          parent_variant_gid: "variant_gid",
+        },
+        components: { path: "items", variant_gid: "variant_gid" },
+      },
+      mappings: [],
+      pilot_scope: {},
+    })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+  });
+
+  it("keeps pre-built import execution disabled unless every server-side dependency is supplied", async () => {
+    const executor = vi.fn();
+    const { app } = service({ prebuiltImportExecutor: executor });
+
+    await expect(app.executePrebuiltBundleImport({
+      import_package: importFixture(),
+      confirmation_token: "token",
+      confirmation: "confirmation",
+    })).rejects.toMatchObject({ code: "UNSUPPORTED_CAPABILITY" });
+    expect(executor).not.toHaveBeenCalled();
+  });
+
+  it("re-reviews the package and executes only its exact server-bound confirmation", async () => {
+    const executor = vi.fn().mockResolvedValue({ completed: 1, failed: 0 });
+    const ledger = { read: vi.fn(), write: vi.fn() };
+    const targetWriter = vi.fn();
+    const createTargetWriter = vi.fn(() => targetWriter);
+    const { app } = service({
+      prebuiltImportExecutionEnabled: true,
+      prebuiltImportExecutor: executor,
+      prebuiltImportLedger: ledger,
+      createPrebuiltImportTargetWriter: createTargetWriter,
+    });
+    const reviewed = await app.reviewPrebuiltBundleImport({ import_package: importFixture() });
+
+    await expect(app.executePrebuiltBundleImport({
+      import_package: importFixture(),
+      confirmation_token: "wrong",
+      confirmation: `IMPORT:${reviewed.import_id}:${reviewed.confirmation_token}`,
+    })).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(executor).not.toHaveBeenCalled();
+
+    await expect(app.executePrebuiltBundleImport({
+      import_package: importFixture(),
+      confirmation_token: reviewed.confirmation_token,
+      confirmation: `IMPORT:${reviewed.import_id}:${reviewed.confirmation_token}`,
+    })).resolves.toEqual({ completed: 1, failed: 0 });
+    expect(createTargetWriter).toHaveBeenCalledWith({
+      pilot_scope: expect.objectContaining({ store_domain: "huang-mvqquz1p.myshopify.com" }),
+    });
+    expect(executor).toHaveBeenCalledWith(expect.objectContaining({
+      plan: expect.objectContaining({ confirmation_token: reviewed.confirmation_token }),
+      ledger,
+      create_target: targetWriter,
+    }));
+  });
+
+  it("does not treat an existing exact target as a resumable import without a completed ledger", async () => {
+    const executor = vi.fn();
+    const ledger = { read: vi.fn(async () => null), write: vi.fn() };
+    const { app } = service({
+      definitions: [definition()],
+      prebuiltImportExecutionEnabled: true,
+      prebuiltImportExecutor: executor,
+      prebuiltImportLedger: ledger,
+      createPrebuiltImportTargetWriter: vi.fn(() => vi.fn()),
+    });
+    const reviewed = await app.reviewPrebuiltBundleImport({ import_package: importFixture() });
+
+    await expect(app.executePrebuiltBundleImport({
+      import_package: importFixture(),
+      confirmation_token: reviewed.confirmation_token,
+      confirmation: `IMPORT:${reviewed.import_id}:${reviewed.confirmation_token}`,
+    })).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(executor).not.toHaveBeenCalled();
   });
 
   it("creates, lists, and reads a bundle definition", async () => {

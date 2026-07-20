@@ -16,6 +16,8 @@ function serviceStub() {
     createBundleDefinition: vi.fn(() => ({ definition: { bundle_definition_id: definitionId }, revisions: [] })),
     updateBundleDefinition: vi.fn(() => ({ definition: { bundle_definition_id: definitionId }, revisions: [] })),
     createDraftRevision: vi.fn(() => ({ revision_id: revisionId, status: "draft" })),
+    reviewPrebuiltBundleImport: vi.fn(() => ({ mode: "dry_run", records: [] })),
+    executePrebuiltBundleImport: vi.fn(() => ({ completed: 1, failed: 0 })),
     cloneActiveRevisionToDraft: vi.fn(() => ({ revision_id: revisionId, status: "draft" })),
     updateDraftRevision: vi.fn(() => ({ revision_id: revisionId, status: "draft" })),
     listRevisionHistory: vi.fn(() => []),
@@ -99,6 +101,101 @@ describe("Bundle Admin authenticated route handlers", () => {
     }));
   });
 
+  it("returns an authenticated, write-free pre-built import review plan", async () => {
+    const { routes, service } = handlers();
+    const result = await responseBody(await routes.reviewPrebuiltBundleImport({
+      request: request("POST", {
+        import_id: "11111111-1111-4111-8111-000000000001",
+        source_records: [],
+        mappings: [],
+        pilot_scope: {},
+      }),
+      params: {},
+    }));
+
+    expect(result).toMatchObject({ status: 200, body: { ok: true, data: { mode: "dry_run" } } });
+    expect(service.reviewPrebuiltBundleImport).toHaveBeenCalledWith(expect.objectContaining({
+      import_id: "11111111-1111-4111-8111-000000000001",
+      source_records: [],
+      mappings: [],
+    }));
+  });
+
+  it("rejects malformed pre-built import review input before invoking the service", async () => {
+    const { routes, service } = handlers();
+    const result = await responseBody(await routes.reviewPrebuiltBundleImport({
+      request: request("POST", { import_id: "x", source_records: {}, mappings: [] }),
+      params: {},
+    }));
+    expect(result).toMatchObject({ status: 400, body: { error: { code: "INVALID_REQUEST" } } });
+    expect(service.reviewPrebuiltBundleImport).not.toHaveBeenCalled();
+  });
+
+  it("accepts a canonical import package without requiring duplicate split fields", async () => {
+    const { routes, service } = handlers();
+    const result = await responseBody(await routes.reviewPrebuiltBundleImport({
+      request: request("POST", { import_package: { schema_version: "prebuilt_bundle_import_package.v1" } }),
+      params: {},
+    }));
+    expect(result).toMatchObject({ status: 200, body: { ok: true } });
+    expect(service.reviewPrebuiltBundleImport).toHaveBeenCalledWith({
+      import_package: { schema_version: "prebuilt_bundle_import_package.v1" },
+    });
+  });
+
+  it("passes validated raw source review input without exposing it to execution", async () => {
+    const { routes, service } = handlers();
+    const body = {
+      import_id: "11111111-1111-4111-8111-000000000001",
+      raw_source_export: [{ id: "bundle-1" }],
+      source_mapping_profile: { schema_version: "prebuilt_bundle_source_mapping.v1" },
+      mappings: [],
+      pilot_scope: {},
+    };
+    const result = await responseBody(await routes.reviewPrebuiltBundleImport({
+      request: request("POST", body),
+      params: {},
+    }));
+
+    expect(result).toMatchObject({ status: 200, body: { ok: true } });
+    expect(service.reviewPrebuiltBundleImport).toHaveBeenCalledWith(body);
+  });
+
+  it("rejects incomplete raw source review input before invoking the service", async () => {
+    const { routes, service } = handlers();
+    const result = await responseBody(await routes.reviewPrebuiltBundleImport({
+      request: request("POST", {
+        import_id: "11111111-1111-4111-8111-000000000001",
+        raw_source_export: [],
+        mappings: [],
+        pilot_scope: {},
+      }),
+      params: {},
+    }));
+
+    expect(result).toMatchObject({ status: 400, body: { error: { code: "INVALID_REQUEST" } } });
+    expect(service.reviewPrebuiltBundleImport).not.toHaveBeenCalled();
+  });
+
+  it("passes only validated package execution input to the guarded service command", async () => {
+    const { routes, service } = handlers();
+    const result = await responseBody(await routes.executePrebuiltBundleImport({
+      request: request("POST", {
+        import_package: { schema_version: "prebuilt_bundle_import_package.v1" },
+        confirmation_token: "1234abcd",
+        confirmation: "IMPORT:id:1234abcd",
+      }),
+      params: {},
+    }));
+
+    expect(result).toMatchObject({ status: 200, body: { ok: true, data: { completed: 1 } } });
+    expect(service.executePrebuiltBundleImport).toHaveBeenCalledWith({
+      import_package: { schema_version: "prebuilt_bundle_import_package.v1" },
+      confirmation_token: "1234abcd",
+      confirmation: "IMPORT:id:1234abcd",
+    });
+  });
+
   it("updates Definition basic fields through the existing detail resource", async () => {
     const { routes, service } = handlers();
     const result = await responseBody(await routes.updateBundleDefinition({
@@ -171,7 +268,11 @@ describe("Bundle Admin authenticated route handlers", () => {
 
     expect(result).toMatchObject({
       status: 500,
-      body: { error: { code: "PERSISTENCE_FAILED", details: { source: "read_back" } } },
+      body: { error: {
+        code: "PERSISTENCE_FAILED",
+        message: "Shopify persistence did not confirm the requested operation",
+        details: { source: "read_back" },
+      } },
     });
   });
 

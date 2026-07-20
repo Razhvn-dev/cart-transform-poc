@@ -80,7 +80,11 @@ function difference(path, hardcoded, snapshot) {
   return { path, hardcoded, snapshot };
 }
 
-function findUnsupportedFunctionResultShape(result, source) {
+/**
+ * Returns structured differences for fields outside the supported Cart
+ * Transform expand result contract. It only reads its input.
+ */
+export function findUnsupportedFunctionResultShape(result, source = "candidate") {
   const differences = [];
 
   (result.operations || []).forEach((operation, operationIndex) => {

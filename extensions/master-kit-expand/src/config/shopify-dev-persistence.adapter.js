@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import {
   BundlePersistenceError,
   assertActiveRevisionCasInput,
   assertSnapshotCasInput,
   normalizeBundlePersistenceError,
 } from "./bundle-persistence.adapter.js";
+import { validatePrebuiltBundleExpandProjection } from "./prebuilt-bundle-expand-projection.js";
 
 export const DEV_SHOPIFY_APP_CLIENT_ID = "d25c62f609855572f3f266765d105ebb";
 
@@ -17,6 +19,8 @@ export const DEV_SHOPIFY_PERSISTENCE_BINDINGS = Object.freeze({
   metafields: Object.freeze({
     namespace: "aces_dev",
     runtimeSnapshotKey: "bundle_runtime_snapshot_v1",
+    prebuiltExpandProjectionKey: "prebuilt_bundle_expand_projection_v1",
+    prebuiltImportLedgerKeyPrefix: "prebuilt_import_ledger_v1_",
     activeRevisionKey: "active_revision_id_v1",
   }),
 });
@@ -35,6 +39,8 @@ export function createDevShopifyPersistenceAdapter({ execute, appClientId, bindi
       snapshot_checksum_cas: true,
       metaobject_compare_and_set: false,
       snapshot_delete_with_cas: false,
+      prebuilt_expand_projection_checksum_cas: true,
+      prebuilt_import_ledger_cas: true,
     }),
     async readBundleDefinition(bundleDefinitionId) {
       return readRequiredDocument(graphql, bindings.metaobjectTypes.bundleDefinition, bundleDefinitionId, "BundleDefinition", bindings);
@@ -69,6 +75,90 @@ export function createDevShopifyPersistenceAdapter({ execute, appClientId, bindi
         bindings,
       )).document;
     },
+    async readPrebuiltExpandProjection(bundleDefinitionId) {
+      const definition = await adapter.readBundleDefinition(bundleDefinitionId);
+      return (await readProductMetafield(
+        graphql,
+        definition.parent_binding.product_gid,
+        bindings.metafields.prebuiltExpandProjectionKey,
+        bindings,
+      )).document;
+    },
+    async writePrebuiltExpandProjection(input) {
+      assertProjectionCasInput(input);
+      const errors = validatePrebuiltBundleExpandProjection(input.projection);
+      if (errors.length > 0) {
+        throw new BundlePersistenceError("WRITE_FAILED", `invalid pre-built expand projection: ${errors.join("; ")}`);
+      }
+      if (input.projection.checksum !== input.target_projection_checksum) {
+        throw new BundlePersistenceError("CHECKSUM_MISMATCH", "target projection checksum does not match");
+      }
+      const definition = await adapter.readBundleDefinition(input.bundle_definition_id);
+      if (input.projection.parent.product_gid !== definition.parent_binding.product_gid) {
+        throw new BundlePersistenceError("WRITE_FAILED", "projection parent Product does not match BundleDefinition");
+      }
+      const current = await readProductMetafield(
+        graphql,
+        definition.parent_binding.product_gid,
+        bindings.metafields.prebuiltExpandProjectionKey,
+        bindings,
+      );
+      if ((current.document?.checksum ?? null) !== input.expected_previous_projection_checksum) {
+        throw new BundlePersistenceError("CHECKSUM_MISMATCH", "previous projection checksum does not match");
+      }
+      const persisted = await setProductMetafield(graphql, {
+        ownerId: definition.parent_binding.product_gid,
+        key: bindings.metafields.prebuiltExpandProjectionKey,
+        type: "json",
+        value: JSON.stringify(input.projection),
+        compareDigest: current.compareDigest,
+      }, bindings);
+      const projection = parseJsonDocument(persisted.jsonValue ?? persisted.value, "Pre-built expand projection");
+      if (projection?.checksum !== input.target_projection_checksum
+        || validatePrebuiltBundleExpandProjection(projection).length > 0) {
+        throw new BundlePersistenceError("READ_BACK_FAILED", "projection write did not return the validated target checksum");
+      }
+      return projection;
+    },
+    async restorePreviousPrebuiltExpandProjection(input) {
+      assertProjectionCasInput(input);
+      if (input.previous_projection === null) {
+        throw new BundlePersistenceError(
+          "UNSUPPORTED_CAPABILITY",
+          "Shopify does not provide compare-and-set deletion for product metafields",
+        );
+      }
+      const definition = await adapter.readBundleDefinition(input.bundle_definition_id);
+      if (input.previous_projection.parent.product_gid !== definition.parent_binding.product_gid) {
+        throw new BundlePersistenceError("WRITE_FAILED", "previous projection parent Product does not match BundleDefinition");
+      }
+      const current = await readProductMetafield(
+        graphql,
+        definition.parent_binding.product_gid,
+        bindings.metafields.prebuiltExpandProjectionKey,
+        bindings,
+      );
+      if (current.document?.checksum !== input.target_projection_checksum) {
+        throw new BundlePersistenceError("CHECKSUM_MISMATCH", "target projection checksum does not match persisted value");
+      }
+      const previousErrors = validatePrebuiltBundleExpandProjection(input.previous_projection);
+      if (previousErrors.length > 0) {
+        throw new BundlePersistenceError("WRITE_FAILED", `invalid previous projection: ${previousErrors.join("; ")}`);
+      }
+      const persisted = await setProductMetafield(graphql, {
+        ownerId: definition.parent_binding.product_gid,
+        key: bindings.metafields.prebuiltExpandProjectionKey,
+        type: "json",
+        value: JSON.stringify(input.previous_projection),
+        compareDigest: current.compareDigest,
+      }, bindings);
+      const restored = parseJsonDocument(persisted.jsonValue ?? persisted.value, "Pre-built expand projection");
+      if (restored?.checksum !== input.expected_previous_projection_checksum
+        || validatePrebuiltBundleExpandProjection(restored).length > 0) {
+        throw new BundlePersistenceError("READ_BACK_FAILED", "projection restore did not return the validated previous checksum");
+      }
+      return restored;
+    },
     async writeRuntimeSnapshot(input) {
       assertSnapshotCasInput(input);
       const definition = await adapter.readBundleDefinition(input.bundle_definition_id);
@@ -78,7 +168,8 @@ export function createDevShopifyPersistenceAdapter({ execute, appClientId, bindi
         bindings.metafields.runtimeSnapshotKey,
         bindings,
       );
-      if (current.document?.checksum !== input.expected_previous_snapshot_checksum) {
+      const currentChecksum = current.document?.checksum ?? null;
+      if (currentChecksum !== input.expected_previous_snapshot_checksum) {
         throw new BundlePersistenceError("CHECKSUM_MISMATCH", "previous Snapshot checksum does not match");
       }
       if (input.snapshot?.checksum !== input.target_snapshot_checksum) {
@@ -133,6 +224,39 @@ export function createDevShopifyPersistenceAdapter({ execute, appClientId, bindi
       const records = await listDocuments(graphql, bindings.metaobjectTypes.publicationRecord, bindings);
       return records.filter((record) => record?.publication_attempt?.bundle_definition_id === bundleDefinitionId);
     },
+    async readPrebuiltImportLedger(sourceIdentity) {
+      assertSourceIdentity(sourceIdentity);
+      const current = await readShopMetafield(
+        graphql,
+        prebuiltImportLedgerKey(sourceIdentity, bindings),
+        bindings,
+      );
+      if (current.document !== null && current.document.source_identity !== sourceIdentity) {
+        throw new BundlePersistenceError("RETRY_CONFLICT", "pre-built import ledger key belongs to a different source identity");
+      }
+      return current.document;
+    },
+    async writePrebuiltImportLedger(record) {
+      assertPrebuiltImportLedgerRecord(record);
+      const key = prebuiltImportLedgerKey(record.source_identity, bindings);
+      const current = await readShopMetafield(graphql, key, bindings);
+      assertPrebuiltImportLedgerTransition(current.document, record);
+      if (current.document !== null && stableJson(current.document) === stableJson(record)) {
+        return current.document;
+      }
+      const persisted = await setShopMetafield(graphql, {
+        ownerId: current.ownerId,
+        key,
+        type: "json",
+        value: JSON.stringify(record),
+        compareDigest: current.compareDigest,
+      }, bindings);
+      const document = parseJsonDocument(persisted.jsonValue ?? persisted.value, "Pre-built import ledger");
+      if (stableJson(document) !== stableJson(record)) {
+        throw new BundlePersistenceError("READ_BACK_FAILED", "pre-built import ledger write did not return the target record");
+      }
+      return document;
+    },
     async restorePreviousSnapshot(input) {
       assertSnapshotCasInput(input);
       if (input.previous_snapshot === null) {
@@ -177,18 +301,128 @@ function assertDevTarget({ appClientId, bindings }) {
   }
 }
 
+function assertProjectionCasInput(input) {
+  for (const field of ["bundle_definition_id", "target_revision_id", "target_projection_checksum", "publication_id"]) {
+    if (typeof input?.[field] !== "string" || input[field].trim() === "") {
+      throw new BundlePersistenceError("WRITE_FAILED", `${field} must be a non-empty string`);
+    }
+  }
+  if (input.expected_previous_projection_checksum !== null
+    && (typeof input.expected_previous_projection_checksum !== "string"
+      || input.expected_previous_projection_checksum.trim() === "")) {
+    throw new BundlePersistenceError("WRITE_FAILED", "expected_previous_projection_checksum must be a string or null");
+  }
+}
+
+function assertSourceIdentity(sourceIdentity) {
+  if (typeof sourceIdentity !== "string" || sourceIdentity.trim() === "") {
+    throw new BundlePersistenceError("WRITE_FAILED", "source_identity must be a non-empty string");
+  }
+}
+
+function assertPrebuiltImportLedgerRecord(record) {
+  const required = [
+    "schema_version", "import_id", "source_identity", "source_fingerprint",
+    "target_bundle_definition_id", "target_fingerprint", "state", "created_at", "updated_at",
+  ];
+  for (const field of required) {
+    if (typeof record?.[field] !== "string" || record[field].trim() === "") {
+      throw new BundlePersistenceError("WRITE_FAILED", `pre-built import ledger ${field} must be a non-empty string`);
+    }
+  }
+  if (record.schema_version !== "prebuilt_bundle_import_ledger.v1") {
+    throw new BundlePersistenceError("WRITE_FAILED", "unsupported pre-built import ledger schema version");
+  }
+  if (!["pending", "completed", "failed"].includes(record.state)) {
+    throw new BundlePersistenceError("WRITE_FAILED", "pre-built import ledger state is invalid");
+  }
+}
+
+function assertPrebuiltImportLedgerTransition(current, target) {
+  if (current === null) {
+    if (target.state !== "pending") {
+      throw new BundlePersistenceError("RETRY_CONFLICT", "a new pre-built import ledger must start pending");
+    }
+    return;
+  }
+  const immutableFields = [
+    "schema_version", "import_id", "source_identity", "source_fingerprint",
+    "target_bundle_definition_id", "target_fingerprint", "created_at",
+  ];
+  if (immutableFields.some((field) => current[field] !== target[field])) {
+    throw new BundlePersistenceError("RETRY_CONFLICT", "pre-built import ledger target content has changed");
+  }
+  if (stableJson(current) === stableJson(target)) return;
+  if (current.state !== "pending" || !["completed", "failed"].includes(target.state)) {
+    throw new BundlePersistenceError("RETRY_CONFLICT", "pre-built import ledger terminal state is immutable");
+  }
+}
+
+function prebuiltImportLedgerKey(sourceIdentity, bindings) {
+  assertSourceIdentity(sourceIdentity);
+  const prefix = bindings.metafields.prebuiltImportLedgerKeyPrefix;
+  if (typeof prefix !== "string" || prefix.trim() === "") {
+    throw new BundlePersistenceError("UNSUPPORTED_CAPABILITY", "pre-built import ledger key prefix is required");
+  }
+  const digest = createHash("sha256").update(sourceIdentity, "utf8").digest("hex").slice(0, 32);
+  return `${prefix}${digest}`;
+}
+
+const READ_RETRY_DELAYS_MS = Object.freeze([75, 200]);
+
 function createGraphqlExecutor(execute) {
   return async (query, variables = {}) => {
-    try {
-      const response = await execute(query, { variables });
-      const payload = typeof response?.json === "function" ? await response.json() : response;
-      if (payload?.errors?.length) throw new BundlePersistenceError("WRITE_FAILED", payload.errors[0].message);
-      if (!payload?.data) throw new BundlePersistenceError("READ_BACK_FAILED", "Shopify Admin GraphQL returned no data");
-      return payload.data;
-    } catch (error) {
-      throw normalizeBundlePersistenceError(error, "WRITE_FAILED");
+    const readOnly = isReadOnlyGraphqlOperation(query);
+    const attempts = readOnly ? READ_RETRY_DELAYS_MS.length + 1 : 1;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const response = await execute(query, { variables });
+        const payload = typeof response?.json === "function" ? await response.json() : response;
+        if (payload?.errors?.length) {
+          throw new BundlePersistenceError(readOnly ? "READ_BACK_FAILED" : "WRITE_FAILED", payload.errors[0].message);
+        }
+        if (!payload?.data) throw new BundlePersistenceError("READ_BACK_FAILED", "Shopify Admin GraphQL returned no data");
+        return payload.data;
+      } catch (error) {
+        const canRetry = readOnly && attempt < attempts && isTransientShopifyReadError(error);
+        if (canRetry) {
+          await wait(READ_RETRY_DELAYS_MS[attempt - 1]);
+          continue;
+        }
+        if (readOnly && isTransientShopifyReadError(error)) {
+          throw new BundlePersistenceError(
+            "READ_BACK_FAILED",
+            "Shopify Admin GraphQL read failed after transient retries",
+            { operation: graphqlOperationName(query), attempts: attempt, transient: true },
+          );
+        }
+        throw normalizeBundlePersistenceError(error, readOnly ? "READ_BACK_FAILED" : "WRITE_FAILED");
+      }
     }
+    throw new BundlePersistenceError("READ_BACK_FAILED", "Shopify Admin GraphQL read retry loop ended unexpectedly");
   };
+}
+
+function isReadOnlyGraphqlOperation(query) {
+  return /^\s*(?:#graphql\s*)?query\b/i.test(query);
+}
+
+function graphqlOperationName(query) {
+  return query.match(/\bquery\s+([A-Za-z0-9_]+)/)?.[1] ?? "anonymous_query";
+}
+
+function isTransientShopifyReadError(error) {
+  if (error instanceof BundlePersistenceError) return false;
+  const status = Number(error?.status ?? error?.response?.status);
+  if (status === 429 || status >= 500) return true;
+  const codes = [error?.code, error?.cause?.code].filter(Boolean).map((value) => String(value).toUpperCase());
+  if (codes.some((code) => ["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EAI_AGAIN", "UND_ERR_SOCKET"].includes(code))) return true;
+  const message = [error?.message, error?.cause?.message].filter(Boolean).join(" ").toLowerCase();
+  return ["socket hang up", "fetch failed", "network error", "timed out", "timeout"].some((token) => message.includes(token));
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function readRequiredDocument(graphql, type, handle, label, bindings) {
@@ -278,6 +512,19 @@ async function readProductMetafield(graphql, productId, key, bindings) {
   };
 }
 
+async function readShopMetafield(graphql, key, bindings) {
+  const data = await graphql(SHOP_METAFIELD_QUERY, { namespace: bindings.metafields.namespace, key });
+  if (typeof data.shop?.id !== "string" || data.shop.id === "") {
+    throw new BundlePersistenceError("READ_BACK_FAILED", "Shopify Admin GraphQL returned no Shop owner ID");
+  }
+  const metafield = data.shop.metafield ?? null;
+  return {
+    ownerId: data.shop.id,
+    compareDigest: metafield?.compareDigest ?? null,
+    document: metafield ? parseMetafieldDocument(metafield, key) : null,
+  };
+}
+
 async function setProductMetafield(graphql, metafield, bindings) {
   const data = await graphql(METAFIELDS_SET_MUTATION, {
     metafields: [{ ...metafield, namespace: bindings.metafields.namespace }],
@@ -286,6 +533,10 @@ async function setProductMetafield(graphql, metafield, bindings) {
   const persisted = data.metafieldsSet?.metafields?.[0];
   if (!persisted) throw new BundlePersistenceError("READ_BACK_FAILED", "metafieldsSet returned no metafield");
   return persisted;
+}
+
+async function setShopMetafield(graphql, metafield, bindings) {
+  return setProductMetafield(graphql, metafield, bindings);
 }
 
 function documentField(bindings, document) {
@@ -363,6 +614,19 @@ const METAOBJECT_UPDATE_MUTATION = `#graphql
 const PRODUCT_METAFIELD_QUERY = `#graphql
   query BundlePersistenceProductMetafield($productId: ID!, $namespace: String!, $key: String!) {
     product(id: $productId) {
+      metafield(namespace: $namespace, key: $key) {
+        type
+        value
+        jsonValue
+        compareDigest
+      }
+    }
+  }`;
+
+const SHOP_METAFIELD_QUERY = `#graphql
+  query BundlePersistenceShopMetafield($namespace: String!, $key: String!) {
+    shop {
+      id
       metafield(namespace: $namespace, key: $key) {
         type
         value

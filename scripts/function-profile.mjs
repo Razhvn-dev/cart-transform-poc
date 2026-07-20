@@ -77,6 +77,56 @@ export const profiles = {
     query: "src/queries/run.dev.graphql",
     required: ["aces_dev", "bundle_runtime_snapshot_test"],
   },
+  "prebuilt-observe": {
+    entry: "src/run.dev.prebuilt-observe.js",
+    query: "src/queries/run.dev.prebuilt-observe.graphql",
+    required: ["aces_dev", "prebuilt_bundle_runtime_mapping_v1", "prebuiltRuntimeMappingMetafield"],
+  },
+  "prebuilt-resolve-observe": {
+    entry: "src/run.dev.prebuilt-resolve-observe.js",
+    query: "src/queries/run.dev.prebuilt-observe.graphql",
+    required: ["aces_dev", "prebuilt_bundle_runtime_mapping_v1", "prebuiltRuntimeMappingMetafield"],
+  },
+  "prebuilt-candidate": {
+    entry: "src/run.dev.prebuilt-candidate.js",
+    query: "src/queries/run.dev.prebuilt-observe.graphql",
+    required: ["aces_dev", "prebuilt_bundle_runtime_mapping_v1", "prebuiltRuntimeMappingMetafield"],
+  },
+  "prebuilt-projection-candidate": {
+    entry: "src/run.dev.prebuilt-projection-candidate.js",
+    query: "src/queries/run.dev.prebuilt-projection.graphql",
+    required: ["aces_dev", "prebuilt_bundle_expand_projection_v1", "prebuiltExpandProjectionMetafield"],
+  },
+  "prebuilt-static-probe": {
+    entry: "src/run.dev.prebuilt-static-probe.js",
+    query: "src/queries/run.production.graphql",
+    forbidden: STAGE_2_FORBIDDEN_TOKENS,
+  },
+  "prebuilt-query-static-probe": {
+    entry: "src/run.dev.prebuilt-static-probe.js",
+    query: "src/queries/run.dev.prebuilt-observe.graphql",
+    required: ["aces_dev", "prebuilt_bundle_runtime_mapping_v1", "prebuiltRuntimeMappingMetafield"],
+  },
+  "prebuilt-parse-static-probe": {
+    entry: "src/run.dev.prebuilt-parse-static-probe.js",
+    query: "src/queries/run.dev.prebuilt-observe.graphql",
+    required: ["aces_dev", "prebuilt_bundle_runtime_mapping_v1", "prebuiltRuntimeMappingMetafield"],
+  },
+  "prebuilt-candidate-build-static-probe": {
+    entry: "src/run.dev.prebuilt-candidate-build-static-probe.js",
+    query: "src/queries/run.dev.prebuilt-observe.graphql",
+    required: ["aces_dev", "prebuilt_bundle_runtime_mapping_v1", "prebuiltRuntimeMappingMetafield"],
+  },
+  "prebuilt-candidate-import-static-probe": {
+    entry: "src/run.dev.prebuilt-candidate-import-static-probe.js",
+    query: "src/queries/run.dev.prebuilt-observe.graphql",
+    required: ["aces_dev", "prebuilt_bundle_runtime_mapping_v1", "prebuiltRuntimeMappingMetafield"],
+  },
+  "prebuilt-metadata-lookup-static-probe": {
+    entry: "src/run.dev.prebuilt-metadata-lookup-static-probe.js",
+    query: "src/queries/run.dev.prebuilt-observe.graphql",
+    required: ["aces_dev", "prebuilt_bundle_runtime_mapping_v1", "prebuiltRuntimeMappingMetafield"],
+  },
 };
 
 const devAppOnlyProfiles = new Set([
@@ -88,6 +138,16 @@ const devAppOnlyProfiles = new Set([
   "bisect-stage-6",
   "bisect-stage-7",
   "bisect-stage-8",
+  "prebuilt-observe",
+  "prebuilt-resolve-observe",
+  "prebuilt-candidate",
+  "prebuilt-projection-candidate",
+  "prebuilt-static-probe",
+  "prebuilt-query-static-probe",
+  "prebuilt-parse-static-probe",
+  "prebuilt-candidate-build-static-probe",
+  "prebuilt-candidate-import-static-probe",
+  "prebuilt-metadata-lookup-static-probe",
 ]);
 
 const allowedDevConfigNames = new Set([
@@ -160,6 +220,13 @@ export function prepareFunctionProfile(profile, options = {}) {
   return selected;
 }
 
+// Shopify CLI reads input_query while packaging an already-built Function. The
+// query must therefore be staged after a dev build restores local production
+// artifacts, and remain staged only for the immediately following deploy.
+export function stageFunctionProfileForDeployment(profile, options = {}) {
+  return prepareFunctionProfile(profile, options);
+}
+
 export function restoreProductionFunctionProfile() {
   const selected = resolveProfile("production");
   const sourceQuery = resolve(extDir, selected.query);
@@ -217,6 +284,30 @@ export function assertStage3GeneratedInputType() {
   ]) {
     if (!generatedTypes.includes(token)) {
       throw new Error(`Stage 3 generated input types are missing "${token}"`);
+    }
+  }
+}
+
+export function assertPrebuiltObserveGeneratedInputType() {
+  const generatedTypes = readFileSync(resolve(extDir, "generated/api.ts"), "utf8");
+
+  for (const token of [
+    "prebuiltRuntimeMappingMetafield",
+    "prebuiltRuntimeSnapshotMetafield",
+    "jsonValue",
+    "value",
+  ]) {
+    if (!generatedTypes.includes(token)) {
+      throw new Error(`Pre-built observe generated input types are missing "${token}"`);
+    }
+  }
+}
+
+export function assertPrebuiltProjectionGeneratedInputType() {
+  const generatedTypes = readFileSync(resolve(extDir, "generated/api.ts"), "utf8");
+  for (const token of ["prebuiltExpandProjectionMetafield", "jsonValue", "value"]) {
+    if (!generatedTypes.includes(token)) {
+      throw new Error(`Pre-built projection generated input types are missing "${token}"`);
     }
   }
 }

@@ -209,6 +209,26 @@
     }
   }
 
+  function bindCartAddXhrInterception(documentRoot = document) {
+    const Xhr = globalThis.XMLHttpRequest;
+    if (typeof Xhr !== "function" || globalThis.__acesPrebuiltBundleXhrBound) return;
+
+    globalThis.__acesPrebuiltBundleXhrBound = true;
+    const nativeOpen = Xhr.prototype.open;
+    const nativeSend = Xhr.prototype.send;
+
+    Xhr.prototype.open = function prebuiltBundleOpen(method, url) {
+      this.__acesPrebuiltBundleRequest = { method, url };
+      return nativeOpen.apply(this, arguments);
+    };
+    Xhr.prototype.send = function prebuiltBundleSend(body) {
+      const request = this.__acesPrebuiltBundleRequest;
+      const init = { method: request?.method, body };
+      if (enrichCartAddRequest(request?.url, init, documentRoot)) body = init.body;
+      return nativeSend.call(this, body);
+    };
+  }
+
   function interceptNativeAddToCartClick(event, documentRoot = document) {
     const submitter = event.target?.closest?.('button[type="submit"], input[type="submit"]');
     const form = submitter?.form;
@@ -247,6 +267,7 @@
     attachMetadataToForm,
     attachMetadataOnSubmit,
     blockInvalidQuantity,
+    bindCartAddXhrInterception,
     createBundleInstanceId,
     createCartProperties,
     createPropertiesForPrebuilt,
@@ -282,4 +303,6 @@
       return nativeFetch.apply(this, arguments);
     };
   }
+
+  if (typeof document !== "undefined") bindCartAddXhrInterception(document);
 })();

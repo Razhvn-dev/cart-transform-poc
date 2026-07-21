@@ -12,13 +12,15 @@ const BLOCK_PATH = resolve(ROOT_DIRECTORY, "extensions/product-builder/blocks/pr
 const assetSource = readFileSync(ASSET_PATH, "utf8");
 const blockSource = readFileSync(BLOCK_PATH, "utf8");
 
-function loadAsset() {
+function loadAsset({ documentRoot, XMLHttpRequest } = {}) {
   const context = {
     globalThis: {
       crypto: { randomUUID: () => "4af6d8b0-0427-49a1-8be7-270bb4132514" },
+      XMLHttpRequest,
     },
     Uint8Array,
   };
+  if (documentRoot) context.document = documentRoot;
   vm.runInNewContext(assetSource, context, { filename: ASSET_PATH });
   return context.globalThis.AcesPrebuiltBundleProductForm;
 }
@@ -291,6 +293,40 @@ describe("pre-built Bundle normal-product cart metadata asset", () => {
       _parent_variant_gid: parent.variantGid,
       _parent_sku: parent.sku,
       _parent_title: parent.title,
+    });
+  });
+
+  it("adds Metadata V1 to an XHR cart request when a theme bypasses form serialization", () => {
+    class FakeXhr {
+      open(method, url) {
+        this.opened = { method, url };
+      }
+
+      send(body) {
+        this.sentBody = body;
+      }
+    }
+    const marker = {
+      dataset: { parentProductGid: parent.productGid, parentTitle: parent.title },
+      querySelector: () => ({
+        textContent: JSON.stringify({
+          51505325605142: { variantGid: parent.variantGid, sku: parent.sku },
+        }),
+      }),
+    };
+    const documentRoot = {
+      addEventListener: () => {},
+      querySelectorAll: (selector) => selector === "[data-prebuilt-bundle-product-form]" ? [marker] : [],
+    };
+    loadAsset({ documentRoot, XMLHttpRequest: FakeXhr });
+
+    const xhr = new FakeXhr();
+    xhr.open("POST", "/cart/add.js");
+    xhr.send(JSON.stringify({ id: "51505325605142", quantity: 1 }));
+
+    expect(JSON.parse(xhr.sentBody).properties).toMatchObject({
+      _bundle_schema_version: "1",
+      _parent_variant_gid: parent.variantGid,
     });
   });
 

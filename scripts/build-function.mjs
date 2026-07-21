@@ -80,10 +80,10 @@ async function ensureJavy() {
   }
 }
 
-function buildEntrySource() {
+function buildEntrySource(entry = entryPath) {
   return `
 import __runFunction from "@shopify/shopify_function/run";
-import { run as run_run } from "./${entryPath}";
+import { run as run_run } from "./${entry}";
 
 export function run() {
   return __runFunction(run_run);
@@ -91,7 +91,7 @@ export function run() {
 `.trim();
 }
 
-async function bundleFunction() {
+async function bundleFunction(entry = entryPath) {
   mkdirSync(distDir, { recursive: true });
   run("npx graphql-code-generator --config package.json");
 
@@ -107,7 +107,7 @@ async function bundleFunction() {
 
   await esbuild.build({
     stdin: {
-      contents: buildEntrySource(),
+      contents: buildEntrySource(entry),
       loader: "ts",
       resolveDir: extDir,
     },
@@ -195,6 +195,7 @@ try {
     await bundleFunction();
     if ([
       "prebuilt-candidate",
+      "prebuilt-candidate-static-fallback",
       "prebuilt-candidate-build-static-probe",
       "prebuilt-candidate-import-static-probe",
       "prebuilt-metadata-lookup-static-probe",
@@ -219,6 +220,7 @@ try {
       "prebuilt-observe",
       "prebuilt-resolve-observe",
       "prebuilt-candidate",
+      "prebuilt-candidate-static-fallback",
       "prebuilt-candidate-build-static-probe",
       "prebuilt-candidate-import-static-probe",
       "prebuilt-metadata-lookup-static-probe",
@@ -231,7 +233,13 @@ try {
 } finally {
   if (functionProfile !== "production") {
     restoreProductionFunctionProfile();
-    run("npx graphql-code-generator --config package.json");
+    // Dev profiles need a dev query and generated types while packaging, but their
+    // JavaScript/Wasm artifact must never remain in dist after the local build.
+    // Rebuild the production artifact after restoring the production query so a
+    // later validation or release cannot accidentally package a dev Function.
+    await bundleFunction(resolveProfile("production").entry);
+    compileWasm();
+    assertProductionCleanArtifacts();
   }
 }
 

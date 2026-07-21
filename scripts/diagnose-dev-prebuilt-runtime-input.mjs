@@ -15,6 +15,8 @@ const TARGET = Object.freeze({
   variantGid: "gid://shopify/ProductVariant/51571819708694",
 });
 
+const target = resolveTarget(process.argv.slice(2));
+
 const root = resolve(import.meta.dirname, "..");
 const directory = await mkdtemp(join(tmpdir(), "aces-prebuilt-diagnostic-"));
 const execute = createShopifyCliReadSafeExecutor({
@@ -22,7 +24,7 @@ const execute = createShopifyCliReadSafeExecutor({
   directory,
   execFileAsync: promisify(execFile),
   root,
-  target: TARGET,
+  target,
 });
 
 try {
@@ -44,10 +46,10 @@ try {
         ) { value jsonValue }
       }
     }
-  `, { variables: { productId: TARGET.productGid } });
+  `, { variables: { productId: target.productGid } });
 
   const product = response.data.product;
-  const variant = product?.variants?.nodes?.find(({ id }) => id === TARGET.variantGid);
+  const variant = product?.variants?.nodes?.find(({ id }) => id === target.variantGid);
   if (!product || !variant) {
     throw new Error("The approved pre-built diagnostic Product/Variant could not be read back");
   }
@@ -77,7 +79,7 @@ try {
   };
 
   console.log(JSON.stringify({
-    target: TARGET,
+    target,
     read_back: {
       product_found: true,
       variant_found: true,
@@ -88,4 +90,18 @@ try {
   }, null, 2));
 } finally {
   await rm(directory, { recursive: true, force: true });
+}
+
+function resolveTarget(args) {
+  if (args.length === 0) return TARGET;
+  if (args.length !== 4 || args[0] !== "--product-gid" || args[2] !== "--variant-gid") {
+    throw new Error("usage: node scripts/diagnose-dev-prebuilt-runtime-input.mjs [--product-gid <gid> --variant-gid <gid>]");
+  }
+  const productGid = args[1];
+  const variantGid = args[3];
+  if (!/^gid:\/\/shopify\/Product\/\d+$/.test(productGid)
+    || !/^gid:\/\/shopify\/ProductVariant\/\d+$/.test(variantGid)) {
+    throw new Error("product and variant targets must be Shopify GIDs");
+  }
+  return Object.freeze({ ...TARGET, productGid, variantGid });
 }

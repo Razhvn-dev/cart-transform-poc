@@ -7,7 +7,7 @@ client_id = "d25c62f609855572f3f266765d105ebb"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products,write_cart_transforms,read_cart_transforms,read_metaobjects,write_metaobjects"
+scopes = "write_products,write_cart_transforms,read_cart_transforms,read_metaobjects,write_metaobjects,read_locations,read_inventory,write_inventory"
 
 [webhooks]
 api_version = "2026-04"

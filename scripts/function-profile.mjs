@@ -92,8 +92,18 @@ export const profiles = {
     query: "src/queries/run.dev.prebuilt-observe.graphql",
     required: ["aces_dev", "prebuilt_bundle_runtime_mapping_v1", "prebuiltRuntimeMappingMetafield"],
   },
+  "prebuilt-candidate-static-fallback": {
+    entry: "src/run.dev.prebuilt-candidate-static-fallback.js",
+    query: "src/queries/run.dev.prebuilt-observe.graphql",
+    required: ["aces_dev", "prebuilt_bundle_runtime_mapping_v1", "prebuiltRuntimeMappingMetafield"],
+  },
   "prebuilt-projection-candidate": {
     entry: "src/run.dev.prebuilt-projection-candidate.js",
+    query: "src/queries/run.dev.prebuilt-projection.graphql",
+    required: ["aces_dev", "prebuilt_bundle_expand_projection_v1", "prebuiltExpandProjectionMetafield"],
+  },
+  "prebuilt-projection-static-fallback": {
+    entry: "src/run.dev.prebuilt-projection-static-fallback.js",
     query: "src/queries/run.dev.prebuilt-projection.graphql",
     required: ["aces_dev", "prebuilt_bundle_expand_projection_v1", "prebuiltExpandProjectionMetafield"],
   },
@@ -141,7 +151,9 @@ const devAppOnlyProfiles = new Set([
   "prebuilt-observe",
   "prebuilt-resolve-observe",
   "prebuilt-candidate",
+  "prebuilt-candidate-static-fallback",
   "prebuilt-projection-candidate",
+  "prebuilt-projection-static-fallback",
   "prebuilt-static-probe",
   "prebuilt-query-static-probe",
   "prebuilt-parse-static-probe",

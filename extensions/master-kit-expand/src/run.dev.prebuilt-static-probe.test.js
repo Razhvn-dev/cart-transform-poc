@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { run } from "./run.dev.prebuilt-static-probe.js";
 
 describe("dev-only pre-built static hosted probe", () => {
-  it("expands only the approved prebuilt test parent into the observed three components", () => {
+  it("expands only the approved prebuilt test parent into three live imported components", () => {
     const result = run({
       cart: {
         lines: [{
@@ -23,9 +23,9 @@ describe("dev-only pre-built static hosted probe", () => {
         cartLineId: "gid://shopify/CartLine/prebuilt",
         title: "Prebuilt Bundle Test",
         expandedCartItems: [
-          expect.objectContaining({ merchandiseId: "gid://shopify/ProductVariant/51552319766806" }),
-          expect.objectContaining({ merchandiseId: "gid://shopify/ProductVariant/51505348346134" }),
-          expect.objectContaining({ merchandiseId: "gid://shopify/ProductVariant/51552321011990" }),
+          expect.objectContaining({ merchandiseId: "gid://shopify/ProductVariant/51592671756566" }),
+          expect.objectContaining({ merchandiseId: "gid://shopify/ProductVariant/51592717566230" }),
+          expect.objectContaining({ merchandiseId: "gid://shopify/ProductVariant/51592730706198" }),
         ],
       },
     }]);

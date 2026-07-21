@@ -13,6 +13,8 @@ import { run as runStage8 } from "../run.dev.stage8.js";
 import { run as runPrebuiltObserve } from "../run.dev.prebuilt-observe.js";
 import { run as runPrebuiltResolveObserve } from "../run.dev.prebuilt-resolve-observe.js";
 import { run as runPrebuiltCandidate } from "../run.dev.prebuilt-candidate.js";
+import { run as runPrebuiltCandidateStaticFallback } from "../run.dev.prebuilt-candidate-static-fallback.js";
+import { run as runPrebuiltProjectionStaticFallback } from "../run.dev.prebuilt-projection-static-fallback.js";
 import { run as runPrebuiltStaticProbe } from "../run.dev.prebuilt-static-probe.js";
 import { run as runPrebuiltParseStaticProbe } from "../run.dev.prebuilt-parse-static-probe.js";
 import { run as runPrebuiltCandidateBuildStaticProbe } from "../run.dev.prebuilt-candidate-build-static-probe.js";
@@ -302,6 +304,57 @@ describe("Cart Transform entry isolation", () => {
     expect(entry).toContain("prebuilt-bundle-runtime.candidate-promotion");
     expect(entry).toContain("prebuilt-bundle-runtime.function-candidate");
     expect(source("run.js")).not.toContain("prebuilt-bundle-runtime.candidate-promotion");
+  });
+
+  it("keeps the candidate/static transition profile dev-only", () => {
+    const entry = source("run.dev.prebuilt-candidate-static-fallback.js");
+    expect(entry).toContain("run.dev.prebuilt-candidate");
+    expect(entry).toContain("run.dev.prebuilt-static-probe");
+    expect(source("run.js")).not.toContain("prebuilt-candidate-static-fallback");
+
+    const result = runPrebuiltCandidateStaticFallback({
+      cart: {
+        lines: [{
+          id: "gid://shopify/CartLine/prebuilt-transition-probe",
+          quantity: 1,
+          merchandise: {
+            __typename: "ProductVariant",
+            id: "gid://shopify/ProductVariant/51571819708694",
+            product: {
+              id: "gid://shopify/Product/10627515777302",
+              prebuiltRuntimeMappingMetafield: null,
+              prebuiltRuntimeSnapshotMetafield: null,
+            },
+          },
+        }],
+      },
+    });
+    expect(result.operations).toHaveLength(1);
+  });
+
+  it("keeps the Projection/static transition profile dev-only", () => {
+    const entry = source("run.dev.prebuilt-projection-static-fallback.js");
+    expect(entry).toContain("run.dev.prebuilt-projection-candidate");
+    expect(entry).toContain("run.dev.prebuilt-static-probe");
+    expect(source("run.js")).not.toContain("prebuilt-projection-static-fallback");
+
+    const result = runPrebuiltProjectionStaticFallback({
+      cart: {
+        lines: [{
+          id: "gid://shopify/CartLine/prebuilt-projection-transition-probe",
+          quantity: 1,
+          merchandise: {
+            __typename: "ProductVariant",
+            id: "gid://shopify/ProductVariant/51571819708694",
+            product: {
+              id: "gid://shopify/Product/10627515777302",
+              prebuiltExpandProjectionMetafield: null,
+            },
+          },
+        }],
+      },
+    });
+    expect(result.operations).toHaveLength(1);
   });
 
   it("keeps the static hosted probe dev-only and out of production entries", () => {

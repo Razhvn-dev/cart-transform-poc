@@ -63,7 +63,7 @@ export function createShopifyCliReadSafeExecutor({
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       const outputFile = join(directory, `response-${requestNumber += 1}.json`);
       try {
-        await execFileAsync(process.execPath, [
+        const cliResult = await execFileAsync(process.execPath, [
           cliEntrypoint,
           "app", "execute",
           "--config", target.appConfig,
@@ -74,7 +74,20 @@ export function createShopifyCliReadSafeExecutor({
           "--output-file", outputFile,
           "--no-color",
         ], { cwd: root, windowsHide: true, timeout: timeoutMs });
-        const payload = JSON.parse(await readFileImpl(outputFile, "utf8"));
+        let outputText;
+        try {
+          outputText = await readFileImpl(outputFile, "utf8");
+        } catch (error) {
+          const cliOutput = [cliResult?.stdout, cliResult?.stderr]
+            .filter(Boolean)
+            .join("\n")
+            .trim();
+          throw new Error(
+            `Shopify CLI did not produce its GraphQL output file${cliOutput ? `: ${cliOutput}` : ""}`,
+            { cause: error },
+          );
+        }
+        const payload = JSON.parse(outputText);
         const response = payload?.data ? payload : { data: payload };
         if (!response.data || response.errors?.length) {
           throw new Error(`Shopify Admin GraphQL returned no data: ${JSON.stringify(payload)}`);

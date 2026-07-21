@@ -50,3 +50,6 @@ temp-*.gql
 
 # Retained local-only Phase 4.4D probes; one contains an intentional stale-CAS mutation.
 /scripts/.phase-4-4d-*.graphql
+
+# Local paid-app exports and captured pilot evidence must never be committed.
+/.local/

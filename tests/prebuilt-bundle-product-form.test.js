@@ -163,13 +163,15 @@ describe("pre-built Bundle normal-product cart metadata asset", () => {
     expect(event.preventDefault).toHaveBeenCalledOnce();
     expect(event.stopImmediatePropagation).toHaveBeenCalledOnce();
 
+    const closest = vi.fn(() => ({ form }));
     const clickEvent = {
-      target: { closest: () => ({ form }) },
+      target: { closest },
       preventDefault: vi.fn(),
       stopImmediatePropagation: vi.fn(),
     };
     asset.interceptNativeAddToCartClick(clickEvent, documentRoot);
 
+    expect(closest).toHaveBeenCalledWith('button[type="submit"], input[type="submit"]');
     expect(clickEvent.preventDefault).toHaveBeenCalledOnce();
     expect(clickEvent.stopImmediatePropagation).toHaveBeenCalledOnce();
   });
@@ -235,8 +237,8 @@ describe("pre-built Bundle normal-product cart metadata asset", () => {
     expect(blockSource).toContain('"name": "Prebuilt bundle metadata"');
     expect(blockSource).not.toContain('block.settings.enabled');
     expect(blockSource).not.toContain('"settings"');
-    expect(blockSource).toContain('"javascript": "prebuilt-bundle-product-form.js"');
-    expect(blockSource).not.toContain("<script src=");
+    expect(blockSource).toContain("{{ 'prebuilt-bundle-product-form.js' | asset_url }}");
+    expect(blockSource).toContain('<script src=');
     expect(blockSource).toContain("data-quantity-error");
     expect(blockSource).not.toContain("data-product-builder");
     expect(blockSource).not.toMatch(/fixed_selection|component_variant|snapshot_checksum|price_cents/i);

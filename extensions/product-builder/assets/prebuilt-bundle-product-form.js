@@ -151,7 +151,7 @@
   }
 
   function interceptNativeAddToCartClick(event, documentRoot = document) {
-    const submitter = event.target?.closest?.('button[type="submit"][name="add"]');
+    const submitter = event.target?.closest?.('button[type="submit"], input[type="submit"]');
     const form = submitter?.form;
     const prebuilt = findPrebuiltVariant(form, documentRoot);
     if (!prebuilt || blockInvalidQuantity(event, form, prebuilt, documentRoot)) return;

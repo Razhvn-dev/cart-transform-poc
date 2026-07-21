@@ -1,0 +1,14 @@
+{
+  "schema_version": "bundles_app_manual_capture.v1",
+  "source_bundle_id": "replace-with-bundles-app-bundle-id",
+  "product_series_key": "replace-with-approved-series-key",
+  "parent_sku": "REPLACE-PARENT-SKU",
+  "components": [
+    { "sku": "REPLACE-COMPONENT-SKU-1", "quantity": 1 },
+    { "sku": "REPLACE-COMPONENT-SKU-2", "quantity": 1 }
+  ],
+  "price_summary": {
+    "expected_component_total_cents": 0,
+    "expected_bundle_price_cents": 0
+  }
+}

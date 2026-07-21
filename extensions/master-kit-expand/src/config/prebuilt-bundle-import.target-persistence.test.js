@@ -69,6 +69,24 @@ describe("pre-built import target persistence", () => {
     expect(retry).toMatchObject({ success: true, idempotent_retry: true });
   });
 
+  it("treats JSON-omitted undefined object fields as identical during recovery", async () => {
+    const { input, compiled } = fixture();
+    const snapshotWithUndefined = structuredClone(compiled.snapshot);
+    snapshotWithUndefined.groups[0].options[0].media_gid = undefined;
+    const persistedSnapshot = JSON.parse(JSON.stringify(snapshotWithUndefined));
+    const staged = { ...compiled.definition, active_revision_id: null };
+    const persistence = createInMemoryBundlePersistenceAdapter({
+      definitions: [staged],
+      revisions: [compiled.revision],
+      snapshots: { [compiled.definition.bundle_definition_id]: persistedSnapshot },
+    });
+
+    await expect(persistPrebuiltBundleImportTarget({
+      ...input,
+      compiled_target: { ...compiled, snapshot: snapshotWithUndefined },
+    }, { persistence })).resolves.toMatchObject({ success: true });
+  });
+
   it("fails closed on partial-state drift", async () => {
     const { input, compiled } = fixture();
     const persistence = createInMemoryBundlePersistenceAdapter({

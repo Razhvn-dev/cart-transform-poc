@@ -56,6 +56,67 @@ It deliberately rejects `--apply`, `--write`, and `--output`:
 npm run normalize:prebuilt-bundle-source -- --input <export.json> --mapping <mapping.json>
 ```
 
+### Bundles.app Variant catalogue plus relationship capture
+
+The current paid application has been identified as `Bundles.app - Inventory Sync`.
+Its available CSV is a Shopify Variant catalogue, not a bundle-relationship export:
+it contains SKU, title, Product ID, Variant ID, type, and status, but no component
+relationship or quantity columns. One complete bundle relationship was therefore
+captured from the paid-app detail screen without editing the source bundle.
+
+`prebuilt-bundle-import.bundles-app-capture.js` combines that read-only Variant CSV
+with an explicit `bundles_app_manual_capture.v1` document containing one parent SKU
+and its ordered component SKU/quantity list. It resolves numeric Shopify IDs into
+full GIDs, requires a unique CSV row for every referenced SKU, requires the parent to
+be marked `BUNDLE`, rejects nested Bundles and quantities other than `1`, and emits
+only canonical source records plus provenance fingerprints. It creates no target
+mapping, Pilot Scope, persistence record, or Shopify write.
+
+```text
+npm run normalize:bundles-app-capture -- --variants-csv <variants.csv> --capture <bundle.json>
+```
+
+When a Shopify product export is also available, the same command accepts
+`--products-csv <products.csv>`. It uniquely matches the parent and component SKUs,
+reconciles the captured component subtotal and Bundle price in integer cents, and
+emits `bundles_app_price_evidence.v1`. The evidence includes original Variant prices
+and a deterministic proportional candidate allocation whose final-line delta makes
+the allocation sum exactly to the Bundle price. This remains review evidence only;
+it is not automatically converted into an executable target mapping.
+
+The capture Schema and sanitized example are
+`docs/schemas/bundles-app-manual-capture.v1.schema.json` and
+`docs/examples/bundles-app-manual-capture.example.json`. This path proves a
+repeatable single-bundle pilot intake; it does not claim that Bundles.app exposes a
+full relationship export or that thousands of bundles can yet be migrated without
+additional vendor data/API access.
+
+### Bundles.app full catalogue workbook preflight
+
+Josh's team supplied an internal Excel export containing complete `Bundle Contents`
+relationships. The local `preflight-bundles-app-catalog.mjs` command combines that
+workbook with the existing Shopify Variant CSV. It parses the ordered SKU/quantity
+relationships, deduplicates only identical parent-SKU relationships, resolves full
+Product/Variant GIDs, and classifies malformed content, conflicting duplicates,
+missing/ambiguous identities, nested Bundles, inactive records, and unsupported
+quantities. It never infers product-series keys, generates target mappings, or calls
+Shopify.
+
+```text
+npm run preflight:bundles-app-catalog -- --xlsx <sku_pricing.xlsx> --variants-csv <variants.csv> --summary --output <new-local-report.json>
+```
+
+`--output` creates only a new local JSON report and refuses to overwrite an existing
+file. `--apply`, `--write`, `--execute`, and `--shopify` are rejected.
+
+The 2026-07-21 real preflight found 2,052 relationship rows and 1,554 unique parent
+SKUs. All 498 duplicate parent SKUs had identical relationships; no malformed,
+missing, ambiguous, nested-Bundle, or conflicting-relationship errors remained.
+1,148 records are ready for target-mapping review. The remaining 406 records are
+blocked only because they contain component quantities above `1`, which the current
+fixed-selection contract intentionally rejects. Full evidence is recorded in
+`docs/BUNDLES_APP_CATALOG_PREFLIGHT_2026-07-21.md`.
+
 After target mappings and an approved Pilot Scope are prepared, the complete
 raw-export-to-plan pipeline remains read-only:
 
@@ -159,14 +220,13 @@ its resumable ordered-write implementation and fail-closed recovery rules.
 
 ## Next implementation boundary
 
-The controlled development-store import rehearsal and vendor-neutral read-only source
-intake are complete. The next boundary is to obtain one real paid-app export sample,
-bind its fields through the declarative mapping profile, review the resulting package,
-then run a single-series Cart -> Checkout -> Order -> Inventory/fulfillment acceptance
-using an explicitly approved pilot. A vendor-specific adapter is required only if the
-real export cannot supply complete Shopify GIDs through data-only paths. Generic
-projection promotion, production data migration, and broader runtime rollout remain
-separately approved phases.
+The controlled development-store import rehearsal, single-bundle pilot import, and
+full-catalogue relationship/Variant preflight are complete. The next local boundary
+is target-mapping and price-evidence preparation for the 1,148 quantity-one records.
+The 406 repeated-quantity records require a V5.5-or-newer proposal before runtime
+changes. The live pilot still requires Cart -> Checkout -> Order -> Inventory and
+fulfillment evidence. Generic projection promotion, production data migration, and
+broader runtime rollout remain separately approved phases.
 
 The maintained incomplete-work register is
 `docs/PREBUILT_PILOT_OUTSTANDING_WORK_2026-07-20.md`. It is the operational checklist

@@ -64,6 +64,10 @@
     "check:production-persistence-readiness": "node scripts/check-production-persistence-rollout-readiness.mjs",
     "plan:prebuilt-bundle-import": "node scripts/plan-prebuilt-bundle-import.mjs",
     "normalize:prebuilt-bundle-source": "node scripts/normalize-prebuilt-bundle-source.mjs",
+    "normalize:bundles-app-capture": "node scripts/normalize-bundles-app-capture.mjs",
+    "preflight:bundles-app-catalog": "node scripts/preflight-bundles-app-catalog.mjs",
+    "prepare:dev-catalog-target-mapping": "node scripts/prepare-dev-catalog-target-mapping.mjs",
+    "import:dev-catalog": "node scripts/import-dev-catalog.mjs",
     "plan:prebuilt-bundle-source-import": "node scripts/plan-prebuilt-bundle-source-import.mjs",
     "check:prebuilt-bundle-pilot": "node scripts/check-prebuilt-bundle-pilot-acceptance.mjs",
     "rehearse:prebuilt-import:dev": "node scripts/execute-dev-prebuilt-import-rehearsal.mjs",
@@ -87,6 +91,7 @@
     "@remix-run/react": "^2.16.1",
     "@remix-run/serve": "^2.16.1",
     "@shopify/app-bridge-react": "^4.1.6",
+    "@shopify/cli": "4.4.0",
     "@shopify/polaris": "^12.0.0",
     "@shopify/shopify-app-remix": "^4.1.0",
     "@shopify/shopify-app-session-storage-prisma": "^8.0.0",
@@ -94,8 +99,7 @@
     "prisma": "^6.2.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "vite-tsconfig-paths": "^5.0.1",
-    "@shopify/cli": "4.4.0"
+    "vite-tsconfig-paths": "^5.0.1"
   },
   "devDependencies": {
     "@remix-run/eslint-config": "^2.16.1",
@@ -107,6 +111,7 @@
     "@types/react-dom": "^18.2.14",
     "eslint": "^8.42.0",
     "eslint-config-prettier": "^10.0.1",
+    "exceljs": "^4.4.0",
     "prettier": "^3.2.4",
     "typescript": "^5.2.2",
     "vite": "^6.2.2"

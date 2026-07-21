@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { useFetcher } from "@remix-run/react";
+import { useEffect, useState } from "react";
+import { useFetcher, useNavigate } from "@remix-run/react";
 import {
   Badge,
   BlockStack,
@@ -11,6 +11,7 @@ import {
   Page,
   Spinner,
   Text,
+  TextField,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { formatTimestamp, getEnvelopeError, type BundleAdminEnvelope } from "../domains/bundle-admin/bundle-admin.ui-state";
@@ -25,15 +26,45 @@ type BundleSummary = {
   updated_at: string;
 };
 
+type BundleDetail = {
+  definition: { bundle_definition_id: string };
+};
+
 export default function BundleAdminListPage() {
   const fetcher = useFetcher<BundleAdminEnvelope<BundleSummary[]>>();
+  const createFetcher = useFetcher<BundleAdminEnvelope<BundleDetail>>();
+  const navigate = useNavigate();
+  const [slug, setSlug] = useState("");
+  const [productGid, setProductGid] = useState("");
+  const [variantGid, setVariantGid] = useState("");
   const loading = fetcher.state !== "idle" && !fetcher.data;
+  const creating = createFetcher.state !== "idle";
 
   useEffect(() => {
     if (!fetcher.data && fetcher.state === "idle") fetcher.load("/app/bundle-admin/bundles");
   }, [fetcher]);
 
+  useEffect(() => {
+    const bundleDefinitionId = createFetcher.data?.ok
+      ? createFetcher.data.data.definition.bundle_definition_id
+      : null;
+    if (bundleDefinitionId) navigate(`/app/bundle-admin/${bundleDefinitionId}`);
+  }, [createFetcher.data, navigate]);
+
+  function createBundle() {
+    if (!slug.trim() || !productGid.trim() || !variantGid.trim()) return;
+    createFetcher.submit(JSON.stringify({
+      slug: slug.trim(),
+      parent_binding: { product_gid: productGid.trim(), variant_gid: variantGid.trim() },
+    }), {
+      method: "post",
+      action: "/app/bundle-admin/bundles",
+      encType: "application/json",
+    });
+  }
+
   const error = getEnvelopeError(fetcher.data);
+  const createError = getEnvelopeError(createFetcher.data);
   const bundles = fetcher.data?.ok ? fetcher.data.data : [];
 
   return (
@@ -47,6 +78,28 @@ export default function BundleAdminListPage() {
       <TitleBar title="Bundle configurations" />
       <BlockStack gap="400">
         {error ? <InlineError title={error.code} message={error.message} /> : null}
+        {createError ? <InlineError title={createError.code} message={createError.message} /> : null}
+        <Card>
+          <BlockStack gap="300">
+            <Text as="h2" variant="headingMd">Create development Bundle</Text>
+            <Text as="p" tone="subdued">
+              Creates only a development BundleDefinition. It does not publish a Runtime Snapshot, change Cart Transform authority, alter products, or change inventory.
+            </Text>
+            <TextField label="Bundle slug" value={slug} onChange={setSlug} autoComplete="off" />
+            <TextField label="Parent product GID" value={productGid} onChange={setProductGid} autoComplete="off" />
+            <TextField label="Parent variant GID" value={variantGid} onChange={setVariantGid} autoComplete="off" />
+            <InlineStack align="end">
+              <Button
+                variant="primary"
+                loading={creating}
+                disabled={!slug.trim() || !productGid.trim() || !variantGid.trim()}
+                onClick={createBundle}
+              >
+                Create BundleDefinition
+              </Button>
+            </InlineStack>
+          </BlockStack>
+        </Card>
         {loading ? <LoadingState label="Loading bundle definitions" /> : null}
         {!loading && !error && bundles.length === 0 ? (
           <Card>

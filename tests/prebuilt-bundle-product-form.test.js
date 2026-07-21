@@ -265,6 +265,35 @@ describe("pre-built Bundle normal-product cart metadata asset", () => {
     expect(hiddenInputs.get("properties[_bundle_schema_version]")?.value).toBe("1");
   });
 
+  it("adds Metadata V1 to a JSON cart request when the theme discards form properties", () => {
+    const asset = loadAsset();
+    const marker = {
+      dataset: { parentProductGid: parent.productGid, parentTitle: parent.title },
+      querySelector: () => ({
+        textContent: JSON.stringify({
+          51505325605142: { variantGid: parent.variantGid, sku: parent.sku },
+        }),
+      }),
+    };
+    const request = {
+      method: "POST",
+      body: JSON.stringify({ items: [{ id: "51505325605142", quantity: 1 }] }),
+    };
+
+    expect(asset.enrichCartAddRequest("/cart/add.js", request, {
+      querySelectorAll: () => [marker],
+    })).toBe(true);
+
+    expect(JSON.parse(request.body).items[0].properties).toEqual({
+      _bundle_id: "4af6d8b0-0427-49a1-8be7-270bb4132514",
+      _bundle_schema_version: "1",
+      _parent_product_gid: parent.productGid,
+      _parent_variant_gid: parent.variantGid,
+      _parent_sku: parent.sku,
+      _parent_title: parent.title,
+    });
+  });
+
   it("contains no component, selection, price, mapping, or Snapshot authority fields", () => {
     expect(assetSource).not.toMatch(/component_variant|fixed_selection|snapshot_checksum|runtime_snapshot|mapping_id|price_cents/i);
   });

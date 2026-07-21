@@ -121,6 +121,26 @@
     return null;
   }
 
+  function findPrebuiltVariantById(variantId, documentRoot = document) {
+    if (!variantId) return null;
+
+    for (const marker of documentRoot.querySelectorAll("[data-prebuilt-bundle-product-form]")) {
+      const variant = readVariantMetadata(marker, variantId);
+      if (variant) return { marker, variant };
+    }
+    return null;
+  }
+
+  function createPropertiesForPrebuilt(prebuilt) {
+    return createCartProperties({
+      bundleInstanceId: createBundleInstanceId(),
+      productGid: prebuilt?.marker?.dataset?.parentProductGid,
+      variantGid: prebuilt?.variant?.variantGid,
+      sku: prebuilt?.variant?.sku,
+      title: prebuilt?.marker?.dataset?.parentTitle,
+    });
+  }
+
   function blockInvalidQuantity(event, form, prebuilt, documentRoot = document) {
     if (readRequestedQuantity(form, documentRoot) === 1) return false;
 
@@ -139,15 +159,54 @@
   }
 
   function attachMetadataToForm(form, prebuilt, documentRoot = document) {
-    const properties = createCartProperties({
-      bundleInstanceId: createBundleInstanceId(),
-      productGid: prebuilt.marker.dataset.parentProductGid,
-      variantGid: prebuilt.variant.variantGid,
-      sku: prebuilt.variant.sku,
-      title: prebuilt.marker.dataset.parentTitle,
-    });
+    const properties = createPropertiesForPrebuilt(prebuilt);
     writeCartProperties(form, properties, documentRoot);
     clearQuantityError(form);
+  }
+
+  function isCartAddRequest(input, init) {
+    const url = typeof input === "string" ? input : input?.url;
+    const method = init?.method ?? input?.method ?? "GET";
+    return typeof url === "string"
+      && /\/cart\/add(?:\.js)?(?:[?#]|$)/.test(url)
+      && String(method).toUpperCase() === "POST";
+  }
+
+  function enrichCartAddRequest(input, init, documentRoot = document) {
+    if (!isCartAddRequest(input, init) || !init?.body) return false;
+
+    const body = init.body;
+    if (typeof body.get === "function" && typeof body.set === "function") {
+      const prebuilt = findPrebuiltVariantById(body.get("id"), documentRoot);
+      const properties = createPropertiesForPrebuilt(prebuilt);
+      if (!properties) return false;
+
+      PROPERTY_KEYS.forEach((key) => {
+        const name = `properties[${key}]`;
+        if (!body.get(name)) body.set(name, properties[key]);
+      });
+      return true;
+    }
+
+    if (typeof body !== "string") return false;
+
+    try {
+      const payload = JSON.parse(body);
+      const items = Array.isArray(payload.items) ? payload.items : [payload];
+      let changed = false;
+      for (const item of items) {
+        const prebuilt = findPrebuiltVariantById(item?.id, documentRoot);
+        const properties = createPropertiesForPrebuilt(prebuilt);
+        if (!properties) continue;
+
+        item.properties = { ...properties, ...(item.properties ?? {}) };
+        changed = true;
+      }
+      if (changed) init.body = JSON.stringify(payload);
+      return changed;
+    } catch {
+      return false;
+    }
   }
 
   function interceptNativeAddToCartClick(event, documentRoot = document) {
@@ -190,12 +249,15 @@
     blockInvalidQuantity,
     createBundleInstanceId,
     createCartProperties,
+    createPropertiesForPrebuilt,
     clearQuantityError,
+    enrichCartAddRequest,
     hydratePrebuiltMetadata,
     readRequestedQuantity,
     readVariantMetadata,
     refreshPrebuiltMetadataForChangedVariant,
     findPrebuiltVariant,
+    findPrebuiltVariantById,
     interceptNativeAddToCartClick,
     showQuantityError,
     shouldIgnoreForm,
@@ -210,5 +272,14 @@
     document.addEventListener("submit", (event) => attachMetadataOnSubmit(event), true);
     document.addEventListener("change", (event) => refreshPrebuiltMetadataForChangedVariant(event), true);
     hydratePrebuiltMetadata(document);
+  }
+
+  if (typeof globalThis.fetch === "function" && !globalThis.__acesPrebuiltBundleFetchBound) {
+    globalThis.__acesPrebuiltBundleFetchBound = true;
+    const nativeFetch = globalThis.fetch;
+    globalThis.fetch = function prebuiltBundleFetch(input, init) {
+      enrichCartAddRequest(input, init, document);
+      return nativeFetch.apply(this, arguments);
+    };
   }
 })();

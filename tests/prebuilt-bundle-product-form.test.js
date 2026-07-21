@@ -13,7 +13,12 @@ const assetSource = readFileSync(ASSET_PATH, "utf8");
 const blockSource = readFileSync(BLOCK_PATH, "utf8");
 
 function loadAsset() {
-  const context = { globalThis: {}, Uint8Array };
+  const context = {
+    globalThis: {
+      crypto: { randomUUID: () => "4af6d8b0-0427-49a1-8be7-270bb4132514" },
+    },
+    Uint8Array,
+  };
   vm.runInNewContext(assetSource, context, { filename: ASSET_PATH });
   return context.globalThis.AcesPrebuiltBundleProductForm;
 }
@@ -167,6 +172,58 @@ describe("pre-built Bundle normal-product cart metadata asset", () => {
 
     expect(clickEvent.preventDefault).toHaveBeenCalledOnce();
     expect(clickEvent.stopImmediatePropagation).toHaveBeenCalledOnce();
+  });
+
+  it("writes Metadata V1 during the capture-phase native add-to-cart click", () => {
+    const asset = loadAsset();
+    const hiddenInputs = new Map();
+    const form = {
+      id: "native-product-form",
+      elements: { namedItem: () => null },
+      matches: () => false,
+      closest: () => null,
+      querySelector: (selector) => {
+        if (selector === '[name="id"]') return { value: "51505325605142" };
+        if (selector === '[name="quantity"]') return { value: "1" };
+        if (selector === "[data-prebuilt-bundle-quantity-error]") return null;
+        const propertyName = selector.match(/^\[name="(.+)"\]$/)?.[1];
+        return propertyName ? hiddenInputs.get(propertyName) ?? null : null;
+      },
+      append: (input) => hiddenInputs.set(input.name, input),
+    };
+    const marker = {
+      dataset: {
+        parentProductGid: parent.productGid,
+        parentTitle: parent.title,
+        quantityError: "Pre-built bundles must be added one at a time.",
+      },
+      querySelector: () => ({
+        textContent: JSON.stringify({
+          51505325605142: { variantGid: parent.variantGid, sku: parent.sku },
+        }),
+      }),
+    };
+    const documentRoot = {
+      createElement: () => ({}),
+      querySelectorAll: (selector) => selector === "[data-prebuilt-bundle-product-form]" ? [marker] : [],
+    };
+    const event = {
+      target: { closest: () => ({ form }) },
+      preventDefault: vi.fn(),
+      stopImmediatePropagation: vi.fn(),
+    };
+
+    asset.interceptNativeAddToCartClick(event, documentRoot);
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(Object.fromEntries([...hiddenInputs].map(([name, input]) => [name, input.value]))).toEqual({
+      "properties[_bundle_id]": "4af6d8b0-0427-49a1-8be7-270bb4132514",
+      "properties[_bundle_schema_version]": "1",
+      "properties[_parent_product_gid]": parent.productGid,
+      "properties[_parent_variant_gid]": parent.variantGid,
+      "properties[_parent_sku]": parent.sku,
+      "properties[_parent_title]": parent.title,
+    });
   });
 
   it("contains no component, selection, price, mapping, or Snapshot authority fields", () => {

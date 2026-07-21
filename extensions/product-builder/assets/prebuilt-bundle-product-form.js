@@ -135,6 +135,10 @@
     const prebuilt = findPrebuiltVariant(form, documentRoot);
     if (!prebuilt || blockInvalidQuantity(event, form, prebuilt, documentRoot)) return;
 
+    attachMetadataToForm(form, prebuilt, documentRoot);
+  }
+
+  function attachMetadataToForm(form, prebuilt, documentRoot = document) {
     const properties = createCartProperties({
       bundleInstanceId: createBundleInstanceId(),
       productGid: prebuilt.marker.dataset.parentProductGid,
@@ -150,11 +154,17 @@
     const submitter = event.target?.closest?.('button[type="submit"][name="add"]');
     const form = submitter?.form;
     const prebuilt = findPrebuiltVariant(form, documentRoot);
-    if (prebuilt) blockInvalidQuantity(event, form, prebuilt, documentRoot);
+    if (!prebuilt || blockInvalidQuantity(event, form, prebuilt, documentRoot)) return;
+
+    // Dawn serializes the form through its AJAX cart handler immediately after
+    // this capture-phase click listener. Write Metadata V1 here as well as on
+    // submit so the properties exist before Dawn constructs that request.
+    attachMetadataToForm(form, prebuilt, documentRoot);
   }
 
   const api = Object.freeze({
     PROPERTY_KEYS,
+    attachMetadataToForm,
     attachMetadataOnSubmit,
     blockInvalidQuantity,
     createBundleInstanceId,

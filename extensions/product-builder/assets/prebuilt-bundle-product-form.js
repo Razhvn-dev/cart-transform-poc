@@ -162,6 +162,27 @@
     attachMetadataToForm(form, prebuilt, documentRoot);
   }
 
+  function hydratePrebuiltMetadata(documentRoot = document) {
+    if (typeof documentRoot?.querySelectorAll !== "function") return;
+
+    for (const form of documentRoot.querySelectorAll("form")) {
+      const prebuilt = findPrebuiltVariant(form, documentRoot);
+      if (prebuilt && readRequestedQuantity(form, documentRoot) === 1) {
+        attachMetadataToForm(form, prebuilt, documentRoot);
+      }
+    }
+  }
+
+  function refreshPrebuiltMetadataForChangedVariant(event, documentRoot = document) {
+    if (event.target?.getAttribute?.("name") !== "id") return;
+
+    const form = event.target.closest?.("form");
+    const prebuilt = findPrebuiltVariant(form, documentRoot);
+    if (prebuilt && readRequestedQuantity(form, documentRoot) === 1) {
+      attachMetadataToForm(form, prebuilt, documentRoot);
+    }
+  }
+
   const api = Object.freeze({
     PROPERTY_KEYS,
     attachMetadataToForm,
@@ -170,8 +191,10 @@
     createBundleInstanceId,
     createCartProperties,
     clearQuantityError,
+    hydratePrebuiltMetadata,
     readRequestedQuantity,
     readVariantMetadata,
+    refreshPrebuiltMetadataForChangedVariant,
     findPrebuiltVariant,
     interceptNativeAddToCartClick,
     showQuantityError,
@@ -185,5 +208,7 @@
     globalThis.__acesPrebuiltBundleProductFormBound = true;
     document.addEventListener("click", (event) => interceptNativeAddToCartClick(event), true);
     document.addEventListener("submit", (event) => attachMetadataOnSubmit(event), true);
+    document.addEventListener("change", (event) => refreshPrebuiltMetadataForChangedVariant(event), true);
+    hydratePrebuiltMetadata(document);
   }
 })();

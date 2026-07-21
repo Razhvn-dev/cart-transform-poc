@@ -228,6 +228,43 @@ describe("pre-built Bundle normal-product cart metadata asset", () => {
     });
   });
 
+  it("hydrates Metadata V1 before the native add-to-cart button is clicked", () => {
+    const asset = loadAsset();
+    const hiddenInputs = new Map();
+    const form = {
+      elements: { namedItem: () => null },
+      matches: () => false,
+      closest: () => null,
+      querySelector: (selector) => {
+        if (selector === '[name="id"]') return { value: "51505325605142" };
+        if (selector === '[name="quantity"]') return { value: "1" };
+        const propertyName = selector.match(/^\[name="(.+)"\]$/)?.[1];
+        return propertyName ? hiddenInputs.get(propertyName) ?? null : null;
+      },
+      append: (input) => hiddenInputs.set(input.name, input),
+    };
+    const marker = {
+      dataset: { parentProductGid: parent.productGid, parentTitle: parent.title },
+      querySelector: () => ({
+        textContent: JSON.stringify({
+          51505325605142: { variantGid: parent.variantGid, sku: parent.sku },
+        }),
+      }),
+    };
+    const documentRoot = {
+      createElement: () => ({}),
+      querySelectorAll: (selector) => {
+        if (selector === "form") return [form];
+        return selector === "[data-prebuilt-bundle-product-form]" ? [marker] : [];
+      },
+    };
+
+    asset.hydratePrebuiltMetadata(documentRoot);
+
+    expect(hiddenInputs.get("properties[_parent_variant_gid]")?.value).toBe(parent.variantGid);
+    expect(hiddenInputs.get("properties[_bundle_schema_version]")?.value).toBe("1");
+  });
+
   it("contains no component, selection, price, mapping, or Snapshot authority fields", () => {
     expect(assetSource).not.toMatch(/component_variant|fixed_selection|snapshot_checksum|runtime_snapshot|mapping_id|price_cents/i);
   });

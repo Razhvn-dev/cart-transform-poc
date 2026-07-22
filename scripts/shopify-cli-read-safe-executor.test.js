@@ -60,8 +60,35 @@ describe("Shopify CLI read-safe executor", () => {
     expect(execFileAsync).toHaveBeenCalledTimes(2);
   });
 
+  it("retries Shopify CLI request-aborted reads within the bounded budget", async () => {
+    const execFileAsync = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error("The user aborted a request."), { stderr: "The user aborted a request." }))
+      .mockResolvedValueOnce({});
+    const execute = createExecutor({ execFileAsync });
+
+    await expect(execute("query Reconcile { shop { name } }")).resolves.toEqual({ data: { shop: { name: "ACES" } } });
+    expect(execFileAsync).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports the actual attempt count when a read fails with a deterministic error", async () => {
+    const execFileAsync = vi.fn().mockRejectedValue(new Error("Access denied for publications field"));
+    const execute = createExecutor({ execFileAsync });
+
+    await expect(execute("query Reconcile { shop { name } }")).rejects.toMatchObject({
+      name: "ShopifyCliTransportError",
+      operationKind: "read_only",
+      attempts: 1,
+      message: "Shopify CLI read-only request failed after 1 attempts; no mutation was sent",
+    });
+    expect(execFileAsync).toHaveBeenCalledTimes(1);
+  });
+
   it("classifies only known transient transport failures for retries", () => {
     expect(isTransientShopifyCliTransportError(new Error("socket hang up"))).toBe(true);
+    expect(isTransientShopifyCliTransportError(new Error("The user aborted a request."))).toBe(true);
+    expect(isTransientShopifyCliTransportError(Object.assign(new Error("CLI failed"), {
+      stderr: "│ Client network socket disconnected before secure TLS │\n│ connection was established │",
+    }))).toBe(true);
     expect(isTransientShopifyCliTransportError(new Error("Shopify Admin GraphQL returned no data"))).toBe(false);
   });
 });

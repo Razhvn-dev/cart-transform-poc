@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { parseBundleDefinition, parseBundleRevision } from "./bundle-domain.parser.js";
+import { createNextDraftRevision } from "./bundle-domain.lifecycle.js";
 import { compileRuntimeSnapshot } from "./bundle-runtime.compiler.js";
 import { masterKitConfigV1 } from "./fixtures/master-kit-config.v1.js";
 import { assertPrebuiltProjectionPublicationEvidence, buildPrebuiltProjectionPublicationEvidence } from "./prebuilt-projection-publication-evidence.js";
@@ -42,5 +43,41 @@ describe("pre-built Projection publication evidence", () => {
     const result = buildPrebuiltProjectionPublicationEvidence(value);
     const tampered = { ...result.evidence, components: [{ ...result.evidence.components[0], fixed_price_per_unit: "0.01" }, ...result.evidence.components.slice(1)] };
     expect(() => assertPrebuiltProjectionPublicationEvidence(tampered, { ...value, projection: result.projection })).toThrow("components do not match");
+  });
+
+  it("supports a next immutable revision on an active definition", () => {
+    const value = fixture();
+    const publishedRevision = parseBundleRevision({
+      ...value.revision,
+      status: "published",
+      runtime_snapshot_ref: {
+        schema_version: value.snapshot.snapshot_schema,
+        checksum_algorithm: value.snapshot.checksum_algorithm,
+        checksum: value.snapshot.checksum,
+        configuration_version: value.snapshot.configuration_version,
+      },
+    });
+    const definition = parseBundleDefinition({
+      ...value.definition,
+      active_revision_id: publishedRevision.revision_id,
+    });
+    const draft = createNextDraftRevision({
+      publishedRevision,
+      revisionId: "77770000-0000-4000-8000-000000000099",
+      createdAt: "2026-07-21T08:00:00Z",
+      createdBy: "test",
+    });
+    const snapshot = compileRuntimeSnapshot(draft.configuration);
+
+    const result = buildPrebuiltProjectionPublicationEvidence({
+      definition,
+      revision: draft,
+      revisions: [publishedRevision, draft],
+      snapshot,
+      pilot_scope: value.pilot_scope,
+    });
+
+    expect(result.evidence.revision_id).toBe(draft.revision_id);
+    expect(result.projection.published_revision_id).toBe(draft.revision_id);
   });
 });

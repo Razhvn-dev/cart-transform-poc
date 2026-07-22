@@ -3,6 +3,9 @@ query RunInput {
     lines {
       id
       quantity
+      cost {
+        amountPerQuantity { amount }
+      }
       bundleId: attribute(key: "_bundle_id") { value }
       bundleSchemaVersion: attribute(key: "_bundle_schema_version") { value }
       parentProductGid: attribute(key: "_parent_product_gid") { value }

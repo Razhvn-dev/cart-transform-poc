@@ -107,6 +107,16 @@ export const profiles = {
     query: "src/queries/run.dev.prebuilt-projection.graphql",
     required: ["aces_dev", "prebuilt_bundle_expand_projection_v1", "prebuiltExpandProjectionMetafield"],
   },
+  "prebuilt-projection-diagnostic-static-probe": {
+    entry: "src/run.dev.prebuilt-projection-diagnostic-static-probe.js",
+    query: "src/queries/run.dev.prebuilt-projection.graphql",
+    required: ["aces_dev", "prebuilt_bundle_expand_projection_v1", "prebuiltExpandProjectionMetafield"],
+  },
+  "prebuilt-projection-promotion-bypass-bisect": {
+    entry: "src/run.dev.prebuilt-projection-promotion-bypass-bisect.js",
+    query: "src/queries/run.dev.prebuilt-projection.graphql",
+    required: ["aces_dev", "prebuilt_bundle_expand_projection_v1", "prebuiltExpandProjectionMetafield"],
+  },
   "prebuilt-static-probe": {
     entry: "src/run.dev.prebuilt-static-probe.js",
     query: "src/queries/run.production.graphql",
@@ -154,6 +164,8 @@ const devAppOnlyProfiles = new Set([
   "prebuilt-candidate-static-fallback",
   "prebuilt-projection-candidate",
   "prebuilt-projection-static-fallback",
+  "prebuilt-projection-diagnostic-static-probe",
+  "prebuilt-projection-promotion-bypass-bisect",
   "prebuilt-static-probe",
   "prebuilt-query-static-probe",
   "prebuilt-parse-static-probe",

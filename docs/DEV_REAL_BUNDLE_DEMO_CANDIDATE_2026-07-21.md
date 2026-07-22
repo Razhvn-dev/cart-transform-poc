@@ -193,7 +193,7 @@ operation.
 
 ## 2026-07-21 storefront metadata injection incident
 
-The published AF4005P Projection and the deployed development Function were
+The published AF4005PK Projection and the deployed development Function were
 verified separately. The failing cart was then inspected through `/cart.js`:
 the parent line had an empty `properties` object. This is the direct reason the
 Function did not expand it: Bundle Metadata V1 was absent, so the Function
@@ -209,8 +209,191 @@ one-item quantity guard. It does not alter component selection, pricing,
 Projection data, Function authority, or the Builder path.
 
 Before accepting the real storefront pilot, release this isolated Theme App
-Extension asset change and verify a newly added AF4005P line through `/cart.js`:
+Extension asset change and verify a newly added AF4005PK line through `/cart.js`:
 `properties` must include `_bundle_id`, `_bundle_schema_version`,
 `_parent_product_gid`, `_parent_variant_gid`, `_parent_sku`, and
 `_parent_title`. Only then repeat Checkout, Order, and component-inventory
 verification.
+
+## 2026-07-21 live Theme assembly diagnosis
+
+A later read-only storefront inspection corrected the affected parent identity
+and localized the remaining failure more precisely:
+
+- The selected real parent Variant is `AF4005PK`
+  (`gid://shopify/ProductVariant/51592671789334`). `AF4005P` is its component
+  Variant on the same Shopify Product.
+- The live product page contains two native `/cart/add` forms, but neither form
+  contains Bundle Metadata V1 inputs.
+- The page contains no `data-prebuilt-bundle-product-form` marker and does not
+  load `prebuilt-bundle-product-form.js`.
+- Development App version `cart-transform-poc-dev-54` is active. The remaining
+  live gap is therefore Theme App Extension block placement/configuration on the
+  real product template, not the Cart Transform binding or Projection carrier.
+
+The local Theme block now requires an exact, unique parent SKU binding before it
+renders any marker or asset. This prevents the component `AF4005P` from being
+mistaken for a bundle parent merely because it shares the Product with
+`AF4005PK`. Direct request enrichment also refuses multi-quantity inputs. The
+local change passed Theme Check, the complete app/Function validation chain, and
+the full test suite, but it has not been deployed or configured in Shopify.
+
+## 2026-07-21 Theme fix activation and read-back
+
+The fix was released only to the development App as active version
+`cart-transform-poc-dev-55`, retaining the
+`prebuilt-projection-static-fallback` Function profile. The published theme's
+Default product template now contains the `Prebuilt bundle metadata` App block
+with `Bundle parent SKU` set to `AF4005PK`.
+
+Live storefront read-back confirmed one marker containing only parent Variant
+`51592671789334`, the v55 asset URL, and all six Metadata V1 inputs on both
+native `/cart/add` forms. Selecting component Variant `AF4005P`
+(`51592671756566`) produced zero form property inputs while the marker continued
+to contain only `AF4005PK`, proving the component isolation boundary.
+
+The next blocker is catalogue availability, not Theme assembly. Parent
+`AF4005PK` currently has Available/On hand `0/0` at Shop location with
+out-of-stock selling disabled. Components `AF4005P` and `AF2009P` both have
+Available/On hand `9/9`. A separately approved, temporary development inventory
+baseline is required before Cart, Checkout, Order, and inventory acceptance can
+continue.
+
+## 2026-07-21 Function deployment artifact root cause
+
+The first real Cart and Checkout run proved that Metadata V1 was present but the
+parent still did not expand. The same active version also failed to expand the
+previously accepted `prebuilt-bundle-test`, and the bounded Function stream
+received no static-probe marker. The cause was the local deployment pipeline,
+not the Cart Transform registration:
+
+- `build-function.mjs` correctly built the selected development entry, but then
+  rebuilt `dist/index.wasm` from production `run.js` before returning;
+- `deploy-function-profile.mjs` subsequently used `shopify app deploy --no-build`,
+  so versions 55 and 56 packaged that restored production Wasm rather than the
+  requested Projection/static profile;
+- version 57, built after the deployment-window artifact fix, immediately
+  restored the known static three-component test expansion and expanded
+  AF4005PK into its two real components.
+
+The deploy orchestrator now retains a dev artifact only while packaging the
+explicit dev profile and dev config. The flag is rejected outside that
+orchestrator, and the outer `finally` restores and validates production query,
+generated types, JavaScript, and Wasm after both successful and failed deploys.
+
+## 2026-07-21 AF4005PK price guard and real acceptance
+
+The hosted static bisect also proved Shopify accepts the published component
+prices, but their sum was wrong: `$469.99 + $119.99 = $589.98` versus the live
+parent price `$559.99`. The development Projection path now queries the live
+parent line amount and fails closed unless all component fixed prices sum to the
+same amount. The exact AF4005PK dev fallback uses the existing reviewed
+proportional allocation, `$446.10 + $113.89 = $559.99`.
+
+Active development version `cart-transform-poc-dev-58` passed the complete real
+storefront acceptance:
+
+- Cart: one AF4005PK parent with all six Metadata V1 properties.
+- Checkout: two expanded components, AF4005P and AF2009P, total `$559.99`.
+- Test order `#1014`: only AF4005P at `$446.10` and AF2009P at `$113.89`;
+  AF4005PK is absent from the order lines.
+- Inventory: both components' Available quantity changed from 9 to 8. Their
+  On hand quantity remains 9 while the order is unfulfilled; the order reserves
+  one unit of each component. The parent stayed at 1 throughout the order and
+  was then restored to Available/On hand `0/0` with read-back confirmation.
+
+This acceptance is development-only and uses a narrow static safety fallback.
+The persisted Projection `822f1465` still carries the undiscounted `$589.98`
+total and is rejected by the new price gate. The next generic-runtime task is a
+new immutable price-evidenced revision/Projection whose allocation totals the
+live parent price; do not overwrite the published revision or weaken the guard.
+
+## 2026-07-21 price-evidenced Projection promotion and no-fallback acceptance
+
+The development-only immutable successor is now published and read back:
+
+- Revision 1 `e94be6f4-e08d-483b-9dcc-d80b98ee4246` is `superseded`.
+- Revision 2 `7b886b43-0e58-47cb-a78d-e05930d75391` is `published` and active.
+- Price evidence checksum is `1d553d8a`; it records the live `$559.99` parent,
+  `$589.98` component subtotal, proportional allocation, and exact component
+  allocations `$446.10 + $113.89`.
+- Runtime Snapshot checksum is `9dbc2455` and Projection checksum is `8ab90f06`.
+- Both the domain publication record and Projection publication record exist.
+
+Shopify CLI transport interrupted the first domain publication after the new
+Snapshot and product active pointer were written. The resumable promotion
+command detected the exact partial state, completed the immutable domain
+lifecycle, wrote the recovery-bound audit, and then published the Projection.
+No resource was deleted or recreated.
+
+Active development version `cart-transform-poc-dev-59`, message
+`projection-price-evidenced-no-static-fallback`, runs the pure
+`prebuilt-projection-candidate` profile. Read-back confirms v59 is active and
+the single Cart Transform registration still resolves to `Master Kit Expand`.
+
+The real browser regression passed without the AF4005PK static fallback:
+
+- Cart contained one AF4005PK parent at `$559.99`.
+- Checkout displayed the parent summary with two expanded child items,
+  AF4005P and AF2009P, and total `$559.99`.
+- No order was submitted in this regression because order `#1014` already
+  proves the component-only Order and inventory behavior for the same prices.
+- The test cart was emptied and temporary parent inventory was restored from
+  Available/On hand `1/1` to `0/0`, with read-back confirmation.
+
+The AF4005PK exact-parent static branch is removed locally. The price mismatch
+guard remains fail closed, while the unrelated isolated regression probe stays
+development-only. Production runtime authority and the Custom Distribution App
+remain unchanged.
+
+## 2026-07-22 component-breadth hosted bisect
+
+The second technical breadth batch persisted and read back exact Definitions,
+Revisions, Snapshots, Projections, and Publications for the three-component
+`AS2008C` and four-component `AS2020PS` parents. Under the pure v59 Projection
+candidate, their Checkout sessions retained the parent even though storefront
+Metadata V1 and local candidate results were exact.
+
+Development version `cart-transform-poc-dev-60`, message
+`component-breadth-static-hosted-bisect`, added only exact static probes for these
+two parent Variants. A genuinely fresh incognito session then passed for `AS2008C`:
+
+- Cart retained one `High Roller (Classic)` parent at `$139.99`.
+- Checkout expanded exactly three component items and preserved the `$139.99` total.
+- No order was submitted.
+- All seven temporary inventory targets were restored from `1/1` to their original
+  `0/0`, with read-back confirmation.
+
+This proves that the active Cart Transform binding, hosted invocation, and Shopify
+expand payload are functional. The remaining defect is confined to the hosted v59
+Projection candidate path. v60 is a development-only diagnostic fallback and must
+not be treated as the generic runtime fix or a production-authority change.
+
+## 2026-07-22 Projection promotion root cause and generic acceptance
+
+The hosted boundary was narrowed with two development-only versions. v61 executed
+the full Projection candidate and surfaced `[projection:ready:1:1]` through the
+proven static response, demonstrating that hosted Projection input, validation, and
+candidate construction succeeded. v62 bypassed only the redundant second
+clone/deep-freeze traversal in candidate promotion; the real three-component
+Projection then expanded correctly in Checkout.
+
+The minimal generic fix reuses candidate operations only when the candidate result
+and operation list are already frozen by the builder. Shared Core operations remain
+defensively cloned, non-frozen candidates retain the previous clone behavior, and
+the combined result remains deeply frozen. This removes the redundant hosted
+traversal without weakening the immutability boundary.
+
+Active development version `cart-transform-poc-dev-63`, message
+`projection-promotion-runtime-cost-fix`, now runs the repaired generic
+`prebuilt-projection-candidate` profile. Real storefront acceptance passed for both
+technical breadth parents:
+
+- `AS2008C`: one Cart parent, three Checkout components, `$139.99` total.
+- `AS2020PS`: one Cart parent, four Checkout components, `$559.99` total.
+
+No order or payment was created. The cart was emptied and inventory window
+`v63-projection-fix-1` restored all seven temporary targets to their exact original
+`0/0` state. The production query, generated types, and Wasm were restored and
+passed the production-clean assertion. Production runtime authority remains the
+hard-coded Shared Core.

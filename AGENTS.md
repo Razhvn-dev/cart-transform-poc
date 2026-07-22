@@ -2,12 +2,13 @@
 
 ## Single Source of Truth
 
-- Before every task, read the full `Project_Master_Context_V5.3_Current_Baseline.md`.
-- V5.3 is the current locked absolute SSOT. Its local Word export is `Project_Master_Context_V5.3_Current_Baseline.docx` and is intentionally ignored by Git.
+- Before any repository, Shopify, deployment, architecture, or project-documentation task, read the full `Project_Master_Context_V5.4_Current_Baseline.md`.
+- Pure conversation, translation, and stakeholder-reply drafting do not require reading the SSOT unless they make project claims or change project documentation.
+- V5.4 is the current locked absolute SSOT. Its local Word export is `Project_Master_Context_V5.4_Current_Baseline.docx` and is intentionally ignored by Git.
 - `Project Master Context V5.2 Final` remains an immutable historical baseline; do not modify it.
-- Do not rely on historical chat records.
+- Do not rely on historical chat records as project authority. Current stakeholder feedback explicitly supplied by Huang may be recorded as confirmed product input in non-SSOT requirements documentation; it does not override SSOT locks or authorize external actions.
 - If repository facts conflict with old reports, trust the current code, tests, and SSOT.
-- Future architecture updates belong in a V5.4 or newer SSOT.
+- Future architecture updates belong in a V5.5 or newer SSOT.
 
 ## Communication Rules
 
@@ -19,10 +20,10 @@
 
 ## Current Baseline
 
-- Current phase: Bundle Admin local persistence hardening within the Production Architecture Baseline.
+- Current phase: Bundle Admin local baseline is complete; development-only pre-built SKU Function diagnosis and local hardening are in progress within the Production Architecture Baseline.
 - Current runtime authority: hard-coded Cart Transform Shared Core.
 - Runtime Snapshot: production remains hard-coded; dev candidate promotion code is implemented and previously validated, but deployed Function state must be confirmed before Function work.
-- Next planned target: finish the local Bundle Admin persistence batch, then perform one explicitly approved dev release and live persistence verification.
+- Next planned target: resolve the development-store pre-built Checkout no-op through read-only active-version/input evidence and a minimal dev-only hosted bisect if separately approved. Guarded publication, rollback, and production work remain separate phases.
 - Do not switch production runtime authority without Huang's explicit approval.
 
 ## Environment Rules
@@ -51,7 +52,15 @@
 
 ## Development Workflow
 
-Every task must:
+### Huang's Local-First Release Policy
+
+- Continue feature work, tests, and documentation locally by default.
+- Do not present a Sealos/Devbox release as the automatic next ordinary step after a local batch. When Huang asks for planning, timelines, or release options, state the external approval dependency clearly.
+- Accumulate compatible local Bundle Admin work until Huang explicitly asks to commit, push, release, or perform a real embedded-Shopify validation.
+- Shopify writes, Function/Theme deployment, Sealos release, commit, and push are external mutations and require Huang's explicit approval, even when local validation passes.
+- Read-only browser, Shopify CLI, Admin API, registration, active-version, and Function-log diagnostics are allowed only when Huang explicitly asks to diagnose or verify live state. Announce the exact development app/store target first and do not mutate external state.
+
+Every repository, Shopify, deployment, architecture, or project-documentation task must:
 
 1. Read the SSOT.
 2. Check `git status` and relevant diffs.
@@ -81,7 +90,7 @@ Every task must:
 - After dev build/typegen, restore production query, generated types, and artifacts when required by the project workflow.
 - Before deployment, clearly print profile, config, app, and store.
 - Do not deploy the dev shadow profile by default.
-- The current development store has been restored to production-profile hard-coded Function behavior. Do not switch it again unless the task explicitly approves it.
+- The current development-store Function profile/version is not assumed from documentation. Confirm the active app version, Function extension, and Cart Transform binding before any Function diagnosis or deployment.
 
 ## File and Working-Tree Safety
 
@@ -116,5 +125,5 @@ Stop and report instead of guessing when:
 - A secret is required but cannot be obtained safely.
 - Shopify live evidence cannot be obtained.
 - The task requires changing locked architecture.
-- An unexpected file must be modified.
+- An unexpected file must be modified, overwritten, or overlaps the current task's change scope.
 - The task may overwrite or lose uncommitted code.

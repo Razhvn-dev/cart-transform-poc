@@ -35,6 +35,7 @@ function line({ id = "gid://shopify/CartLine/prebuilt", bundleId = "906ec234-e2b
   return {
     id,
     quantity: 1,
+    cost: { amountPerQuantity: { amount: projectionTotal(projection) } },
     bundleId: { value: bundleId },
     bundleSchemaVersion: { value: "1" },
     parentProductGid: { value: snapshot.parent.product_gid },
@@ -50,6 +51,14 @@ function line({ id = "gid://shopify/CartLine/prebuilt", bundleId = "906ec234-e2b
       },
     },
   };
+}
+
+function projectionTotal(projection) {
+  const cents = projection.components.reduce(
+    (total, component) => total + Math.round(Number(component.fixed_price_per_unit) * 100),
+    0,
+  );
+  return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`;
 }
 
 describe("pre-built projection Function candidate", () => {
@@ -98,6 +107,14 @@ describe("pre-built projection Function candidate", () => {
 
     expect(candidate.status).toBe("unavailable");
     expect(candidate.result).toEqual({ operations: [] });
+  });
+
+  it("fails closed when component prices do not preserve the parent line price", () => {
+    const mismatchedPrice = line();
+    mismatchedPrice.cost.amountPerQuantity.amount = "1.00";
+
+    expect(buildPrebuiltBundleProjectionFunctionCandidate({ cart: { lines: [mismatchedPrice] } }))
+      .toMatchObject({ status: "unavailable", result: { operations: [] } });
   });
 
   it("keeps the hard-coded Builder path and projection path independent", () => {

@@ -1,38 +1,48 @@
 {% doc %}
   Adds correlation-only Bundle Metadata V1 fields to the native product form for
-  a pre-built Bundle SKU. Placing this block in an approved pre-built product
-  template is the explicit opt-in; it must not require a second setting that
-  can silently leave the native form unprotected.
+  a pre-built Bundle SKU. The block must bind one exact parent SKU because a
+  Shopify Product can contain both the bundle parent and ordinary component
+  Variants. Missing or ambiguous bindings fail closed.
 {% enddoc %}
 
-{% if product != blank %}
+{% if product != blank and block.settings.parent_variant_sku != blank %}
+  {% assign approved_parent_variants = product.variants | where: 'sku', block.settings.parent_variant_sku %}
   {% capture parent_product_gid %}gid://shopify/Product/{{ product.id }}{% endcapture %}
 
-  <div
-    data-prebuilt-bundle-product-form
-    data-parent-product-gid="{{ parent_product_gid | strip | escape }}"
-    data-parent-title="{{ product.title | escape }}"
-    data-quantity-error="{{ 'prebuilt_bundle.quantity_one_at_a_time' | t | escape }}"
-    hidden
-    {{ block.shopify_attributes }}
-  >
-    <script type="application/json" data-prebuilt-bundle-variant-map>
-      {
-        {% for variant in product.variants %}
-          "{{ variant.id }}": {
-            "variantGid": "gid://shopify/ProductVariant/{{ variant.id }}",
-            "sku": {{ variant.sku | json }}
-          }{% unless forloop.last %},{% endunless %}
-        {% endfor %}
-      }
-    </script>
-  </div>
-  <script src="{{ 'prebuilt-bundle-product-form.js' | asset_url }}" defer="defer"></script>
+  {% if approved_parent_variants.size == 1 %}
+    <div
+      data-prebuilt-bundle-product-form
+      data-parent-product-gid="{{ parent_product_gid | strip | escape }}"
+      data-parent-title="{{ product.title | escape }}"
+      data-quantity-error="{{ 'prebuilt_bundle.quantity_one_at_a_time' | t | escape }}"
+      hidden
+      {{ block.shopify_attributes }}
+    >
+      <script type="application/json" data-prebuilt-bundle-variant-map>
+        {
+          {% assign approved_parent_variant = approved_parent_variants.first %}
+          "{{ approved_parent_variant.id }}": {
+            "variantGid": "gid://shopify/ProductVariant/{{ approved_parent_variant.id }}",
+            "sku": {{ approved_parent_variant.sku | json }}
+          }
+        }
+      </script>
+    </div>
+    <script src="{{ 'prebuilt-bundle-product-form.js' | asset_url }}" defer="defer"></script>
+  {% endif %}
 {% endif %}
 
 {% schema %}
 {
   "name": "Prebuilt bundle metadata",
-  "target": "section"
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "parent_variant_sku",
+      "label": "Bundle parent SKU",
+      "info": "Must match exactly one variant on this product."
+    }
+  ]
 }
 {% endschema %}

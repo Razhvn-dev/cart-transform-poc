@@ -36,6 +36,7 @@ const witFile = join(distDir, "javy-world.wit");
 const entryArgIndex = process.argv.indexOf("--entry");
 const profileArgIndex = process.argv.indexOf("--profile");
 const appConfigArgIndex = process.argv.indexOf("--app-config");
+const retainProfileArtifactForDeployment = process.argv.includes("--retain-profile-artifact-for-deployment");
 const functionProfile =
   profileArgIndex >= 0
     ? process.argv[profileArgIndex + 1]
@@ -57,6 +58,16 @@ if (entryPath !== expectedEntryPath) {
   );
 }
 assertProfileAppConfigAllowed(functionProfile, appConfig);
+if (retainProfileArtifactForDeployment) {
+  if (functionProfile === "production") {
+    throw new Error("Production builds cannot retain a development deployment artifact.");
+  }
+  if (process.env.ACES_FUNCTION_DEPLOY_BUILD !== "1") {
+    throw new Error(
+      "--retain-profile-artifact-for-deployment is reserved for deploy-function-profile.mjs.",
+    );
+  }
+}
 
 function run(cmd, cwd = extDir) {
   execSync(cmd, { stdio: "inherit", cwd });
@@ -202,7 +213,12 @@ try {
     ].includes(functionProfile)) {
       assertPrebuiltCandidateBundleIsRuntimeSafe();
     }
-    if (functionProfile === "prebuilt-projection-candidate") {
+    if ([
+      "prebuilt-projection-candidate",
+      "prebuilt-projection-static-fallback",
+      "prebuilt-projection-diagnostic-static-probe",
+      "prebuilt-projection-promotion-bypass-bisect",
+    ].includes(functionProfile)) {
       assertPrebuiltProjectionBundleIsRuntimeSafe();
       assertPrebuiltProjectionGeneratedInputType();
     }
@@ -231,7 +247,7 @@ try {
     console.log(`Built ${functionWasm}`);
   });
 } finally {
-  if (functionProfile !== "production") {
+  if (functionProfile !== "production" && !retainProfileArtifactForDeployment) {
     restoreProductionFunctionProfile();
     // Dev profiles need a dev query and generated types while packaging, but their
     // JavaScript/Wasm artifact must never remain in dist after the local build.

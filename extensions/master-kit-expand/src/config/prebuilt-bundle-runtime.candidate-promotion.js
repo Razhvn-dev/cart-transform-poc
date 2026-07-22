@@ -21,10 +21,15 @@ export function promotePrebuiltBundleRuntimeCandidate(hardcodedResult, candidate
     return cloneFunctionResult(hardcodedResult);
   }
 
+  const reusableCandidateOperations = Object.isFrozen(candidate?.result)
+    && Object.isFrozen(candidateOperations);
+
   return deepFreeze({
     operations: [
       ...hardcodedOperations.map((operation) => clonePrebuiltBundleRuntimeValue(operation)),
-      ...candidateOperations.map((operation) => clonePrebuiltBundleRuntimeValue(operation)),
+      ...(reusableCandidateOperations
+        ? candidateOperations
+        : candidateOperations.map((operation) => clonePrebuiltBundleRuntimeValue(operation))),
     ],
   });
 }

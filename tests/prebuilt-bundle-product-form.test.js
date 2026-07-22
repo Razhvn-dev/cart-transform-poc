@@ -296,6 +296,27 @@ describe("pre-built Bundle normal-product cart metadata asset", () => {
     });
   });
 
+  it("does not add Metadata V1 to multi-quantity direct cart requests", () => {
+    const asset = loadAsset();
+    const marker = {
+      dataset: { parentProductGid: parent.productGid, parentTitle: parent.title },
+      querySelector: () => ({
+        textContent: JSON.stringify({
+          51505325605142: { variantGid: parent.variantGid, sku: parent.sku },
+        }),
+      }),
+    };
+    const request = {
+      method: "POST",
+      body: JSON.stringify({ items: [{ id: "51505325605142", quantity: 2 }] }),
+    };
+
+    expect(asset.enrichCartAddRequest("/cart/add.js", request, {
+      querySelectorAll: () => [marker],
+    })).toBe(false);
+    expect(JSON.parse(request.body).items[0].properties).toBeUndefined();
+  });
+
   it("adds Metadata V1 to an XHR cart request when a theme bypasses form serialization", () => {
     class FakeXhr {
       open(method, url) {
@@ -334,11 +355,13 @@ describe("pre-built Bundle normal-product cart metadata asset", () => {
     expect(assetSource).not.toMatch(/component_variant|fixed_selection|snapshot_checksum|runtime_snapshot|mapping_id|price_cents/i);
   });
 
-  it("uses block placement as the only opt-in, stays Shopify-schema-compatible, and is isolated from the Builder template", () => {
-    expect(blockSource).toContain('{% if product != blank %}');
+  it("requires one explicitly bound parent SKU, stays Shopify-schema-compatible, and is isolated from the Builder template", () => {
+    expect(blockSource).toContain("{% if product != blank and block.settings.parent_variant_sku != blank %}");
     expect(blockSource).toContain('"name": "Prebuilt bundle metadata"');
-    expect(blockSource).not.toContain('block.settings.enabled');
-    expect(blockSource).not.toContain('"settings"');
+    expect(blockSource).toContain("block.settings.parent_variant_sku");
+    expect(blockSource).toContain("product.variants | where: 'sku', block.settings.parent_variant_sku");
+    expect(blockSource).toContain("approved_parent_variants.size == 1");
+    expect(blockSource).not.toContain("for variant in product.variants");
     expect(blockSource).toContain("{{ 'prebuilt-bundle-product-form.js' | asset_url }}");
     expect(blockSource).toContain('<script src=');
     expect(blockSource).toContain("data-quantity-error");

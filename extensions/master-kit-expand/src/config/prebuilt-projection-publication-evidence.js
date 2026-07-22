@@ -8,12 +8,12 @@ export const PREBUILT_PROJECTION_PUBLICATION_EVIDENCE_SCHEMA = "prebuilt_project
 // Dev-pilot evidence for a real fixed SKU. It deliberately does not claim
 // parity with the unrelated hard-coded Builder SKU; it proves that the exact
 // draft can produce one checksum-valid, server-owned Projection instead.
-export function buildPrebuiltProjectionPublicationEvidence({ definition, revision, snapshot, pilot_scope: pilotScope }) {
+export function buildPrebuiltProjectionPublicationEvidence({ definition, revision, revisions = [revision], snapshot, pilot_scope: pilotScope }) {
   if (revision?.status !== "draft") throw new Error("only a draft revision may produce publication evidence");
   if (validateRuntimeSnapshot(snapshot).length > 0) throw new Error("draft snapshot is invalid");
   const published = publishRevision({
     definition,
-    revisions: [revision],
+    revisions,
     revisionId: revision.revision_id,
     runtimeSnapshotRef: {
       schema_version: snapshot.snapshot_schema,
@@ -25,7 +25,7 @@ export function buildPrebuiltProjectionPublicationEvidence({ definition, revisio
   });
   const candidate = derivePrebuiltBundleRuntimeMapping({
     definition: published.definition,
-    revision: published.revisions[0],
+    revision: published.revisions.find((candidateRevision) => candidateRevision.revision_id === revision.revision_id),
     snapshot,
     fixed_selections: Object.fromEntries(snapshot.groups.map((group) => [group.key, group.default_option])),
     pilot_scope: pilotScope,

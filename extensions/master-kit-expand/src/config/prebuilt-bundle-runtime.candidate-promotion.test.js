@@ -49,6 +49,19 @@ describe("pre-built Bundle candidate promotion", () => {
     expect(Object.isFrozen(promoted)).toBe(true);
   });
 
+  it("reuses builder-owned deeply frozen candidate operations without a second clone traversal", () => {
+    const sharedCore = hardcoded();
+    const candidateResult = deepFreeze(candidate());
+    const candidateOperation = candidateResult.result.operations[0];
+
+    const promoted = promotePrebuiltBundleRuntimeCandidate(sharedCore, candidateResult);
+
+    expect(promoted.operations[0]).not.toBe(sharedCore.operations[0]);
+    expect(promoted.operations[1]).toBe(candidateOperation);
+    expect(Object.isFrozen(promoted)).toBe(true);
+    expect(Object.isFrozen(promoted.operations)).toBe(true);
+  });
+
   it("identifies only fully gated candidate Cart lines for Shared Core exclusion", () => {
     expect(isPrebuiltBundleRuntimeCandidateComplete(candidate())).toBe(true);
     expect([...getPrebuiltCandidateCartLineIds(candidate())]).toEqual([
@@ -73,3 +86,9 @@ describe("pre-built Bundle candidate promotion", () => {
     expect(fallback.operations).not.toBe(sharedCore.operations);
   });
 });
+
+function deepFreeze(value) {
+  if (value == null || typeof value !== "object" || Object.isFrozen(value)) return value;
+  Object.values(value).forEach(deepFreeze);
+  return Object.freeze(value);
+}

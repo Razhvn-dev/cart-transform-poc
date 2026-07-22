@@ -25,17 +25,26 @@ const node = process.execPath;
 const buildScript = resolve(repoRoot, "scripts/build-function.mjs");
 const cli = resolve(repoRoot, "node_modules/@shopify/cli/bin/run.js");
 
-function run(command, args) {
+function run(command, args, options = {}) {
   execFileSync(command, args, {
     cwd: repoRoot,
     stdio: "inherit",
+    env: { ...process.env, ...options.env },
   });
 }
 
 try {
-  // The build intentionally restores production query/types on completion.
-  // Re-stage the matching query only for Shopify CLI's --no-build packaging.
-  run(node, [buildScript, "--profile", profile, "--app-config", appConfig]);
+  // Retain the selected dev Wasm only inside this guarded deployment window.
+  // The build restores the active query, so re-stage it for --no-build packaging;
+  // the outer finally always rebuilds the production query/types/artifacts.
+  run(node, [
+    buildScript,
+    "--profile",
+    profile,
+    "--app-config",
+    appConfig,
+    "--retain-profile-artifact-for-deployment",
+  ], { env: { ACES_FUNCTION_DEPLOY_BUILD: "1" } });
   const selected = stageFunctionProfileForDeployment(profile, { appConfig });
   console.log(`Deploying ${profile} Function profile (${selected.query}) with ${appConfig}.`);
   run(node, [

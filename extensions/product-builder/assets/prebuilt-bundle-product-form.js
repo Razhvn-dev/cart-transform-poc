@@ -91,6 +91,11 @@
     return Number.isSafeInteger(quantity) && quantity > 0 ? quantity : null;
   }
 
+  function isSingleRequestedQuantity(value) {
+    if (value == null || value === "") return true;
+    return Number(value) === 1;
+  }
+
   function showQuantityError(form, message, documentRoot = document) {
     let error = form.querySelector("[data-prebuilt-bundle-quantity-error]");
     if (!error) {
@@ -177,6 +182,7 @@
 
     const body = init.body;
     if (typeof body.get === "function" && typeof body.set === "function") {
+      if (!isSingleRequestedQuantity(body.get("quantity"))) return false;
       const prebuilt = findPrebuiltVariantById(body.get("id"), documentRoot);
       const properties = createPropertiesForPrebuilt(prebuilt);
       if (!properties) return false;
@@ -195,6 +201,7 @@
       const items = Array.isArray(payload.items) ? payload.items : [payload];
       let changed = false;
       for (const item of items) {
+        if (!isSingleRequestedQuantity(item?.quantity)) continue;
         const prebuilt = findPrebuiltVariantById(item?.id, documentRoot);
         const properties = createPropertiesForPrebuilt(prebuilt);
         if (!properties) continue;
@@ -274,6 +281,7 @@
     clearQuantityError,
     enrichCartAddRequest,
     hydratePrebuiltMetadata,
+    isSingleRequestedQuantity,
     readRequestedQuantity,
     readVariantMetadata,
     refreshPrebuiltMetadataForChangedVariant,

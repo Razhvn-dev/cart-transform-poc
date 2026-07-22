@@ -25,7 +25,9 @@ export function isTransientShopifyCliTransportError(error) {
   const message = [error?.message, error?.stderr, error?.cause?.message]
     .filter((value) => typeof value === "string")
     .join("\n")
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/[│╭╮╰╯─]+/g, " ")
+    .replace(/\s+/g, " ");
   return [
     "socket hang up",
     "socket disconnected before secure tls connection",
@@ -33,6 +35,7 @@ export function isTransientShopifyCliTransportError(error) {
     "etimedout",
     "eai_again",
     "fetch failed",
+    "the user aborted a request",
   ].some((token) => message.includes(token));
 }
 
@@ -59,8 +62,10 @@ export function createShopifyCliReadSafeExecutor({
     const readOnly = isReadOnlyGraphql(query);
     const attempts = readOnly ? readOnlyAttempts : 1;
     let lastError;
+    let performedAttempts = 0;
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      performedAttempts = attempt;
       const outputFile = join(directory, `response-${requestNumber += 1}.json`);
       try {
         const cliResult = await execFileAsync(process.execPath, [
@@ -103,9 +108,9 @@ export function createShopifyCliReadSafeExecutor({
     const operationKind = readOnly ? "read_only" : "mutation";
     throw new ShopifyCliTransportError(
       readOnly
-        ? `Shopify CLI read-only request failed after ${attempts} attempts; no mutation was sent`
+        ? `Shopify CLI read-only request failed after ${performedAttempts} attempts; no mutation was sent`
         : "Shopify CLI mutation request failed with an unknown remote outcome; reconcile before retrying",
-      { operationKind, attempts: readOnly ? attempts : 1, cause: lastError },
+      { operationKind, attempts: readOnly ? performedAttempts : 1, cause: lastError },
     );
   };
 }

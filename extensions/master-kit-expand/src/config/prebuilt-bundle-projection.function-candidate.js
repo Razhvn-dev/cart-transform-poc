@@ -70,7 +70,24 @@ function projectionMatchesLine(projection, line) {
   return projection != null
     && validatePrebuiltBundleExpandProjection(projection).length === 0
     && projection.parent.variant_gid === line?.merchandise?.id
-    && projection.parent.product_gid === line?.merchandise?.product?.id;
+    && projection.parent.product_gid === line?.merchandise?.product?.id
+    && projectionPriceMatchesLine(projection, line);
+}
+
+function projectionPriceMatchesLine(projection, line) {
+  const parentPriceCents = decimalToCents(line?.cost?.amountPerQuantity?.amount);
+  const componentPriceCents = projection.components.reduce((total, component) => {
+    const cents = decimalToCents(component.fixed_price_per_unit);
+    return total == null || cents == null ? null : total + cents;
+  }, 0);
+  return parentPriceCents != null && componentPriceCents === parentPriceCents;
+}
+
+function decimalToCents(value) {
+  if (!/^\d+\.\d{2}$/.test(value ?? "")) return null;
+  const [whole, fraction] = value.split(".");
+  const cents = (Number(whole) * 100) + Number(fraction);
+  return Number.isSafeInteger(cents) ? cents : null;
 }
 
 function buildMetadataV1Attributes(metadata, projection, component) {

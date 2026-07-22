@@ -1,0 +1,20 @@
+{
+  "schema_version": "dev_catalog_technical_batch_scope.v1",
+  "batch_id": "quantity-one-price-allocation-acceptance-v1",
+  "purpose": "Explicit technical acceptance batch; it does not assign or infer a business product series.",
+  "draft_created_at": "2026-07-21T09:30:00.000Z",
+  "draft_created_by": "codex-dev-catalog-technical-batch",
+  "existing_parent_skus": [
+    "AF4005PK"
+  ],
+  "dev_product_series_assignments": {
+    "AD2011-C": "dev-distributor-coil-bundle-acceptance",
+    "AD2023-C": "dev-distributor-coil-bundle-acceptance",
+    "AF4005PK": "real-af4005pk-demo"
+  },
+  "parent_skus": [
+    "AD2011-C",
+    "AD2023-C",
+    "AF4005PK"
+  ]
+}

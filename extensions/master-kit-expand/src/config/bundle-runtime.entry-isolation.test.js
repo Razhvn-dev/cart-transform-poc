@@ -359,10 +359,13 @@ describe("Cart Transform entry isolation", () => {
 
   it("keeps the static hosted probe dev-only and out of production entries", () => {
     const entry = source("run.dev.prebuilt-static-probe.js");
-    expect(entry).toContain("PREBUILT_PARENT_VARIANT_GID");
+    expect(entry).toContain("PREBUILT_PROBES");
+    expect(entry).toContain("51571819708694");
+    expect(entry).not.toContain("51592671789334");
     expect(entry).not.toContain("prebuiltRuntimeMappingMetafield");
     expect(source("run.js")).not.toContain("prebuilt-static-probe");
     expect(source("run.core.js")).not.toContain("51571819708694");
+    expect(source("run.core.js")).not.toContain("51592671789334");
 
     const result = runPrebuiltStaticProbe({
       cart: {

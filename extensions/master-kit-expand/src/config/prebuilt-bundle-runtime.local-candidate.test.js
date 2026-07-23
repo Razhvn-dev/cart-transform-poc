@@ -82,9 +82,9 @@ describe("pre-built Bundle local candidate flow", () => {
     expect(candidate.result.operations).toHaveLength(1);
     expect(candidate.result.operations[0].expand).toMatchObject({ cartLineId: "gid://shopify/CartLine/1" });
     expect(candidate.result.operations[0].expand.expandedCartItems.map((item) => item.merchandiseId)).toEqual([
-      "gid://shopify/ProductVariant/51552319766806",
+      "gid://shopify/ProductVariant/51592538587414",
       "gid://shopify/ProductVariant/51505348346134",
-      "gid://shopify/ProductVariant/51552321011990",
+      "gid://shopify/ProductVariant/51592730706198",
     ]);
     expect(JSON.stringify(candidate.result)).not.toContain("ignored");
   });

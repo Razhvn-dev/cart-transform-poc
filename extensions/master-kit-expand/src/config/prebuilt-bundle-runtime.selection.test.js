@@ -41,9 +41,9 @@ describe("pre-built Bundle fixed-selection resolver", () => {
 
     expect(result.status).toBe("resolved");
     expect(result.resolved.components.map((component) => component.variantId)).toEqual([
-      "gid://shopify/ProductVariant/51552319766806",
+      "gid://shopify/ProductVariant/51592538587414",
       "gid://shopify/ProductVariant/51505348346134",
-      "gid://shopify/ProductVariant/51552321011990",
+      "gid://shopify/ProductVariant/51592730706198",
     ]);
     expect(result.resolved.components.map((component) => component.fixedPricePerUnit)).toEqual([
       "512.99",

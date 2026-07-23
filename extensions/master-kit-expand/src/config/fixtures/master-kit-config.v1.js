@@ -40,7 +40,7 @@ export const masterKitConfigV1 = {
         {
           option_key: "efi_killshot_fusion_lite",
           product_gid: "gid://shopify/Product/10620891824406",
-          variant_gid: "gid://shopify/ProductVariant/51552319766806",
+          variant_gid: "gid://shopify/ProductVariant/51592538587414",
           sku: "AS2212CBL-BT",
           label: "Killshot Fusion (Lite) EFI System",
           active: true,
@@ -134,7 +134,7 @@ export const masterKitConfigV1 = {
         {
           option_key: "ignition_black_jack_coil",
           product_gid: "gid://shopify/Product/10620891988246",
-          variant_gid: "gid://shopify/ProductVariant/51552321011990",
+          variant_gid: "gid://shopify/ProductVariant/51592730706198",
           sku: "AC2008",
           label: "Black Jack Pro Series Ignition Coils",
           active: true,

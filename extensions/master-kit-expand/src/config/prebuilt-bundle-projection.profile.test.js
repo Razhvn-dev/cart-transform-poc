@@ -30,6 +30,7 @@ describe("pre-built projection profile isolation", () => {
     const query = readFileSync(resolve(extDir, profile.query), "utf8");
     expect(profile.entry).toBe("src/run.dev.prebuilt-projection-candidate.js");
     expect(query).toContain("prebuiltExpandProjectionMetafield");
+    expect(query).toMatch(/prebuiltExpandProjectionMetafield:[\s\S]*?\{\s*jsonValue\s*\}/);
     expect(query).toContain("amountPerQuantity");
     expect(query).not.toContain("prebuiltRuntimeMappingMetafield");
     expect(query).not.toContain("prebuiltRuntimeSnapshotMetafield");

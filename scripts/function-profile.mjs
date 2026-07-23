@@ -329,7 +329,7 @@ export function assertPrebuiltObserveGeneratedInputType() {
 
 export function assertPrebuiltProjectionGeneratedInputType() {
   const generatedTypes = readFileSync(resolve(extDir, "generated/api.ts"), "utf8");
-  for (const token of ["prebuiltExpandProjectionMetafield", "jsonValue", "value"]) {
+  for (const token of ["prebuiltExpandProjectionMetafield", "jsonValue"]) {
     if (!generatedTypes.includes(token)) {
       throw new Error(`Pre-built projection generated input types are missing "${token}"`);
     }

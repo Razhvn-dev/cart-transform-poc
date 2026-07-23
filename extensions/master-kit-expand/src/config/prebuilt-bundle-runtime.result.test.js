@@ -38,9 +38,9 @@ describe("pre-built Bundle Function result builder", () => {
           cartLineId: "gid://shopify/CartLine/100",
           title: "Master Kit Test",
           expandedCartItems: [
-            expect.objectContaining({ merchandiseId: "gid://shopify/ProductVariant/51552319766806", quantity: 1 }),
+            expect.objectContaining({ merchandiseId: "gid://shopify/ProductVariant/51592538587414", quantity: 1 }),
             expect.objectContaining({ merchandiseId: "gid://shopify/ProductVariant/51505348346134", quantity: 1 }),
-            expect.objectContaining({ merchandiseId: "gid://shopify/ProductVariant/51552321011990", quantity: 1 }),
+            expect.objectContaining({ merchandiseId: "gid://shopify/ProductVariant/51592730706198", quantity: 1 }),
           ],
         },
       }],

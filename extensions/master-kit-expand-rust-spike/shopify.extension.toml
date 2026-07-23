@@ -1,0 +1,22 @@
+api_version = "2026-04"
+
+[[extensions]]
+name = "t:name"
+handle = "master-kit-expand-rust-spike"
+type = "function"
+uid = "78c1637f-3320-8cfd-0ab9-066a9033b9d557e7a6d8"
+description = "t:description"
+
+  [[extensions.targeting]]
+  target = "purchase.cart-transform.run"
+  input_query = "src/run.graphql"
+  export = "run"
+
+  [extensions.build]
+  command = "cargo build --locked --target=wasm32-unknown-unknown --release"
+  path = "target/wasm32-unknown-unknown/release/master-kit-expand-rust-spike.wasm"
+  watch = [ "src/**/*.rs" ]
+
+  [extensions.ui.paths]
+  create = "/"
+  details = "/"

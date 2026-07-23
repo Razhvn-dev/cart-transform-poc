@@ -194,9 +194,9 @@ describe("pre-built Bundle future Function candidate composition", () => {
     mixed.cart.lines.push({
       id: "gid://shopify/CartLine/builder",
       quantity: 1,
-      builderEfiVariantId: { value: "gid://shopify/ProductVariant/51552319766806" },
+      builderEfiVariantId: { value: "gid://shopify/ProductVariant/51592538587414" },
       builderFuelVariantId: { value: "gid://shopify/ProductVariant/51505348346134" },
-      builderIgnitionVariantId: { value: "gid://shopify/ProductVariant/51552321011990" },
+      builderIgnitionVariantId: { value: "gid://shopify/ProductVariant/51592730706198" },
       merchandise: {
         __typename: "ProductVariant",
         id: "gid://shopify/ProductVariant/51505325605142",

@@ -16,11 +16,11 @@ const UUID_REGEX =
 const PRODUCT_GID_REGEX = /^gid:\/\/shopify\/Product\/\d+$/;
 
 const VARIANT_IDS = {
-  EFI_FUSION_LITE: "gid://shopify/ProductVariant/51552319766806",
+  EFI_FUSION_LITE: "gid://shopify/ProductVariant/51592538587414",
   EFI_KILLSHOT_2_PRO: "gid://shopify/ProductVariant/51552319865110",
   FUEL_TEST: "gid://shopify/ProductVariant/51505348346134",
   FUEL_TEST_2: "gid://shopify/ProductVariant/51518319591702",
-  IGNITION_BLACK_JACK: "gid://shopify/ProductVariant/51552321011990",
+  IGNITION_BLACK_JACK: "gid://shopify/ProductVariant/51592730706198",
   IGNITION_HIGH_ROLLER: "gid://shopify/ProductVariant/51552321110294",
   DISPLAY_5_HD: "gid://shopify/ProductVariant/51552321175830",
   DISPLAY_8_HD: "gid://shopify/ProductVariant/51552322584854",

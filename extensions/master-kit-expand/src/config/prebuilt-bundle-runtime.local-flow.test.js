@@ -35,9 +35,9 @@ function prebuiltResult(lines, fixedSelections) {
 }
 
 function builderInput({
-  efi = "gid://shopify/ProductVariant/51552319766806",
+  efi = "gid://shopify/ProductVariant/51592538587414",
   fuel = "gid://shopify/ProductVariant/51505348346134",
-  ignition = "gid://shopify/ProductVariant/51552321011990",
+  ignition = "gid://shopify/ProductVariant/51592730706198",
   display,
 } = {}) {
   const line = {

@@ -26,7 +26,6 @@ query RunInput {
               namespace: "aces_dev"
               key: "prebuilt_bundle_expand_projection_v1"
             ) {
-              value
               jsonValue
             }
           }

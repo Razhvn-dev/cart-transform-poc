@@ -19,9 +19,9 @@ it("Stage 7 discards the comparison and returns the Shared Core result", () => {
             },
           },
         },
-        builderEfiVariantId: { value: "gid://shopify/ProductVariant/51552319766806" },
+        builderEfiVariantId: { value: "gid://shopify/ProductVariant/51592538587414" },
         builderFuelVariantId: { value: "gid://shopify/ProductVariant/51505348346134" },
-        builderIgnitionVariantId: { value: "gid://shopify/ProductVariant/51552321011990" },
+        builderIgnitionVariantId: { value: "gid://shopify/ProductVariant/51592730706198" },
       }],
     },
   };

@@ -23,9 +23,9 @@ function plan() {
       product_series_key: "aces-efi",
       parent_binding: { product_gid: masterKitConfigV1.parent.product_gid, variant_gid: masterKitConfigV1.parent.variant_gid },
       components: [
-        { variant_gid: "gid://shopify/ProductVariant/51552319766806", quantity: 1 },
+        { variant_gid: "gid://shopify/ProductVariant/51592538587414", quantity: 1 },
         { variant_gid: "gid://shopify/ProductVariant/51505348346134", quantity: 1 },
-        { variant_gid: "gid://shopify/ProductVariant/51552321011990", quantity: 1 },
+        { variant_gid: "gid://shopify/ProductVariant/51592730706198", quantity: 1 },
       ],
     }],
     mappings: [{

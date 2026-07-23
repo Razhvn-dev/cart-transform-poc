@@ -4,7 +4,10 @@ import {
   RUNTIME_SNAPSHOT_HASH_ALGORITHM,
   UUID_REGEX,
 } from "./bundle-config.schema.js";
-import { calculateStableValueChecksum } from "./bundle-runtime.checksum.js";
+import {
+  calculateSerializedValueChecksum,
+  calculateStableValueChecksum,
+} from "./bundle-runtime.checksum.js";
 
 export const PREBUILT_BUNDLE_EXPAND_PROJECTION_SCHEMA_VERSION = "prebuilt_bundle_expand_projection.v1";
 
@@ -70,12 +73,59 @@ export function validatePrebuiltBundleExpandProjection(projection) {
   }
 
   if (isNonEmptyString(projection.checksum)) {
-    const { checksum, ...projectionBody } = projection;
-    if (calculateStableValueChecksum(projectionBody) !== checksum) errors.push("projection checksum is invalid");
+    if (calculatePrebuiltBundleExpandProjectionChecksum(projection) !== projection.checksum) {
+      errors.push("projection checksum is invalid");
+    }
   } else {
     errors.push("projection checksum is required");
   }
   return errors;
+}
+
+export function isValidPrebuiltBundleExpandProjection(projection) {
+  if (!isPlainObject(projection)
+    || projection.schema_version !== PREBUILT_BUNDLE_EXPAND_PROJECTION_SCHEMA_VERSION
+    || projection.checksum_algorithm !== RUNTIME_SNAPSHOT_HASH_ALGORITHM
+    || !UUID_REGEX.test(projection.bundle_definition_id ?? "")
+    || !UUID_REGEX.test(projection.published_revision_id ?? "")
+    || !isNonEmptyString(projection.source_snapshot_checksum)
+    || !isValidParent(projection.parent)
+    || !Array.isArray(projection.components)
+    || projection.components.length === 0
+    || !isNonEmptyString(projection.checksum)) {
+    return false;
+  }
+  for (let index = 0; index < projection.components.length; index += 1) {
+    if (!isValidRuntimeComponent(projection.components[index], index + 1)) return false;
+  }
+  return calculatePrebuiltBundleExpandProjectionChecksum(projection) === projection.checksum;
+}
+
+export function calculatePrebuiltBundleExpandProjectionChecksum(projection) {
+  const canonical = {
+    bundle_definition_id: projection.bundle_definition_id,
+    checksum_algorithm: projection.checksum_algorithm,
+    components: (projection.components ?? []).map((component) => ({
+      fixed_price_per_unit: component.fixed_price_per_unit,
+      group: component.group,
+      product_gid: component.product_gid,
+      role: component.role,
+      sequence: component.sequence,
+      sku: component.sku,
+      title: component.title,
+      variant_gid: component.variant_gid,
+    })),
+    parent: {
+      product_gid: projection.parent?.product_gid,
+      sku: projection.parent?.sku,
+      title: projection.parent?.title,
+      variant_gid: projection.parent?.variant_gid,
+    },
+    published_revision_id: projection.published_revision_id,
+    schema_version: projection.schema_version,
+    source_snapshot_checksum: projection.source_snapshot_checksum,
+  };
+  return calculateSerializedValueChecksum(JSON.stringify(canonical));
 }
 
 function isValidParent(parent) {
@@ -95,6 +145,15 @@ function isValidComponent(component, expectedSequence) {
     && PRODUCT_VARIANT_GID_REGEX.test(component.variant_gid ?? "")
     && isNonEmptyString(component.sku)
     && isNonEmptyString(component.title)
+    && /^\d+\.\d{2}$/.test(component.fixed_price_per_unit ?? "");
+}
+
+function isValidRuntimeComponent(component, expectedSequence) {
+  return isPlainObject(component)
+    && component.sequence === expectedSequence
+    && isNonEmptyString(component.group)
+    && isNonEmptyString(component.role)
+    && PRODUCT_VARIANT_GID_REGEX.test(component.variant_gid ?? "")
     && /^\d+\.\d{2}$/.test(component.fixed_price_per_unit ?? "");
 }
 

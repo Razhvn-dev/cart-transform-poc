@@ -2,11 +2,11 @@ import { describe, it, expect } from "vitest";
 import { run } from "./run.js";
 
 const MASTER_KIT_VARIANT_ID = "gid://shopify/ProductVariant/51505325605142";
-const EFI_FUSION_LITE = "gid://shopify/ProductVariant/51552319766806";
+const EFI_FUSION_LITE = "gid://shopify/ProductVariant/51592538587414";
 const EFI_KILLSHOT_2_PRO = "gid://shopify/ProductVariant/51552319865110";
 const FUEL_TEST = "gid://shopify/ProductVariant/51505348346134";
 const FUEL_TEST_2 = "gid://shopify/ProductVariant/51518319591702";
-const IGNITION_BLACK_JACK = "gid://shopify/ProductVariant/51552321011990";
+const IGNITION_BLACK_JACK = "gid://shopify/ProductVariant/51592730706198";
 const IGNITION_HIGH_ROLLER = "gid://shopify/ProductVariant/51552321110294";
 const DISPLAY_8_HD = "gid://shopify/ProductVariant/51552322584854";
 const BUNDLE_ID = "9c92f2bf-7b9e-4ef8-9c49-7a9d86ec1d31";
@@ -16,6 +16,10 @@ const CLIENT_PARENT_PRODUCT_GID = "gid://shopify/Product/111";
 const CLIENT_PARENT_VARIANT_GID = "gid://shopify/ProductVariant/111";
 const PARENT_SKU = "MASTER-KIT-001";
 const PARENT_TITLE = "Master Kit Test";
+const DELETED_STANDARD_VARIANTS = [
+  "gid://shopify/ProductVariant/51552319766806",
+  "gid://shopify/ProductVariant/51552321011990",
+];
 
 function masterLine(attributes = {}) {
   return {
@@ -551,6 +555,63 @@ describe("master kit expand", () => {
     });
 
     expect(expandedItems(result)[1].merchandiseId).toBe(FUEL_TEST_2);
+  });
+
+  it("never emits deleted Standard variants from Standard, fallback, compatibility, or Advanced", () => {
+    const cases = [
+      masterLine({
+        builderEfiVariantId: attribute(EFI_FUSION_LITE),
+        builderFuelVariantId: attribute(FUEL_TEST),
+        builderIgnitionVariantId: attribute(IGNITION_BLACK_JACK),
+      }),
+      masterLine({
+        builderEfiVariantId: attribute("gid://shopify/ProductVariant/1"),
+        builderFuelVariantId: attribute("gid://shopify/ProductVariant/2"),
+        builderIgnitionVariantId: attribute("gid://shopify/ProductVariant/3"),
+      }),
+      masterLine({
+        builderEfiVariantId: attribute(EFI_FUSION_LITE),
+        builderFuelVariantId: attribute(FUEL_TEST_2),
+        builderIgnitionVariantId: attribute(IGNITION_BLACK_JACK),
+        builderDisplayVariantId: attribute(DISPLAY_8_HD),
+      }),
+      masterLine({
+        builderEfiVariantId: attribute(EFI_KILLSHOT_2_PRO),
+        builderFuelVariantId: attribute(FUEL_TEST_2),
+        builderIgnitionVariantId: attribute(IGNITION_HIGH_ROLLER),
+        builderDisplayVariantId: attribute(DISPLAY_8_HD),
+      }),
+    ];
+
+    for (const line of cases) {
+      const result = run({ cart: { lines: [line] } });
+      expect(expandedItems(result).map(({ merchandiseId }) => merchandiseId))
+        .not.toEqual(expect.arrayContaining(DELETED_STANDARD_VARIANTS));
+    }
+  });
+
+  it("falls back to the current trusted Standard when retired Builder variants are requested", () => {
+    const result = run({
+      cart: {
+        lines: [
+          masterLine({
+            builderEfiVariantId: attribute(DELETED_STANDARD_VARIANTS[0]),
+            builderFuelVariantId: attribute(FUEL_TEST),
+            builderIgnitionVariantId: attribute(DELETED_STANDARD_VARIANTS[1]),
+          }),
+        ],
+      },
+    });
+    const variantIds = expandedItems(result).map(({ merchandiseId }) => merchandiseId);
+
+    expect(variantIds).toEqual([
+      EFI_FUSION_LITE,
+      FUEL_TEST,
+      IGNITION_BLACK_JACK,
+    ]);
+    expect(variantIds).not.toEqual(
+      expect.arrayContaining(DELETED_STANDARD_VARIANTS),
+    );
   });
 
   it("uses the real Function input shape from run.graphql", () => {

@@ -1,0 +1,142 @@
+{
+  "cart": {
+    "lines": [
+      {
+        "id": "gid://shopify/CartLine/prebuilt-projection-budget",
+        "quantity": 1,
+        "cost": {
+          "amountPerQuantity": {
+            "amount": "80.00"
+          }
+        },
+        "bundleId": {
+          "value": "11111111-1111-4111-8111-111111111111"
+        },
+        "bundleSchemaVersion": {
+          "value": "1"
+        },
+        "parentProductGid": {
+          "value": "gid://shopify/Product/10638456357142"
+        },
+        "parentVariantGid": {
+          "value": "gid://shopify/ProductVariant/51592577089814"
+        },
+        "parentSku": {
+          "value": "AS2014B2-MK-2011-4005P"
+        },
+        "parentTitle": {
+          "value": "AS2014B2-MK-2011-4005P"
+        },
+        "builderEfiVariantId": null,
+        "builderFuelVariantId": null,
+        "builderIgnitionVariantId": null,
+        "builderDisplayVariantId": null,
+        "merchandise": {
+          "__typename": "ProductVariant",
+          "id": "gid://shopify/ProductVariant/99999999999999",
+          "product": {
+            "id": "gid://shopify/Product/10638456357142",
+            "prebuiltExpandProjectionMetafield": {
+              "jsonValue": {
+                "schema_version": "prebuilt_bundle_expand_projection.v1",
+                "checksum_algorithm": "fnv1a-32",
+                "bundle_definition_id": "7bd39574-70f2-5d52-b8af-4c1717d6f390",
+                "published_revision_id": "f8344a2c-1bfc-5bf6-942f-50bcf9a3be94",
+                "source_snapshot_checksum": "92644e9b",
+                "parent": {
+                  "product_gid": "gid://shopify/Product/10638456357142",
+                  "variant_gid": "gid://shopify/ProductVariant/51592577089814",
+                  "sku": "AS2014B2-MK-2011-4005P",
+                  "title": "AS2014B2-MK-2011-4005P"
+                },
+                "components": [
+                  {
+                    "sequence": 1,
+                    "group": "group_1",
+                    "role": "role_1",
+                    "product_gid": "gid://shopify/Product/10000000000001",
+                    "variant_gid": "gid://shopify/ProductVariant/20000000000001",
+                    "sku": "SKU-01",
+                    "title": "Component 1",
+                    "fixed_price_per_unit": "10.00"
+                  },
+                  {
+                    "sequence": 2,
+                    "group": "group_2",
+                    "role": "role_2",
+                    "product_gid": "gid://shopify/Product/10000000000002",
+                    "variant_gid": "gid://shopify/ProductVariant/20000000000002",
+                    "sku": "SKU-02",
+                    "title": "Component 2",
+                    "fixed_price_per_unit": "10.00"
+                  },
+                  {
+                    "sequence": 3,
+                    "group": "group_3",
+                    "role": "role_3",
+                    "product_gid": "gid://shopify/Product/10000000000003",
+                    "variant_gid": "gid://shopify/ProductVariant/20000000000003",
+                    "sku": "SKU-03",
+                    "title": "Component 3",
+                    "fixed_price_per_unit": "10.00"
+                  },
+                  {
+                    "sequence": 4,
+                    "group": "group_4",
+                    "role": "role_4",
+                    "product_gid": "gid://shopify/Product/10000000000004",
+                    "variant_gid": "gid://shopify/ProductVariant/20000000000004",
+                    "sku": "SKU-04",
+                    "title": "Component 4",
+                    "fixed_price_per_unit": "10.00"
+                  },
+                  {
+                    "sequence": 5,
+                    "group": "group_5",
+                    "role": "role_5",
+                    "product_gid": "gid://shopify/Product/10000000000005",
+                    "variant_gid": "gid://shopify/ProductVariant/20000000000005",
+                    "sku": "SKU-05",
+                    "title": "Component 5",
+                    "fixed_price_per_unit": "10.00"
+                  },
+                  {
+                    "sequence": 6,
+                    "group": "group_6",
+                    "role": "role_6",
+                    "product_gid": "gid://shopify/Product/10000000000006",
+                    "variant_gid": "gid://shopify/ProductVariant/20000000000006",
+                    "sku": "SKU-06",
+                    "title": "Component 6",
+                    "fixed_price_per_unit": "10.00"
+                  },
+                  {
+                    "sequence": 7,
+                    "group": "group_7",
+                    "role": "role_7",
+                    "product_gid": "gid://shopify/Product/10000000000007",
+                    "variant_gid": "gid://shopify/ProductVariant/20000000000007",
+                    "sku": "SKU-07",
+                    "title": "Component 7",
+                    "fixed_price_per_unit": "10.00"
+                  },
+                  {
+                    "sequence": 8,
+                    "group": "group_8",
+                    "role": "role_8",
+                    "product_gid": "gid://shopify/Product/10000000000008",
+                    "variant_gid": "gid://shopify/ProductVariant/20000000000008",
+                    "sku": "SKU-08",
+                    "title": "Component 8",
+                    "fixed_price_per_unit": "10.00"
+                  }
+                ],
+                "checksum": "eeb56acf"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

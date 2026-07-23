@@ -18,6 +18,10 @@ export function calculateStableValueChecksum(value) {
   return fnv1a32(stableSerialize(value));
 }
 
+export function calculateSerializedValueChecksum(value) {
+  return fnv1a32(value);
+}
+
 export function attachRuntimeSnapshotChecksum(snapshot) {
   const snapshotWithoutChecksum = {
     ...snapshot,

@@ -1,0 +1,36 @@
+query Input {
+  cart {
+    lines {
+      id
+      quantity
+      cost {
+        amountPerQuantity { amount }
+      }
+      bundleId: attribute(key: "_bundle_id") { value }
+      bundleSchemaVersion: attribute(key: "_bundle_schema_version") { value }
+      parentProductGid: attribute(key: "_parent_product_gid") { value }
+      parentVariantGid: attribute(key: "_parent_variant_gid") { value }
+      parentSku: attribute(key: "_parent_sku") { value }
+      parentTitle: attribute(key: "_parent_title") { value }
+      builderEfiVariantId: attribute(key: "_builder_efi_variant_id") { value }
+      builderFuelVariantId: attribute(key: "_builder_fuel_variant_id") { value }
+      builderIgnitionVariantId: attribute(key: "_builder_ignition_variant_id") { value }
+      builderDisplayVariantId: attribute(key: "_builder_display_variant_id") { value }
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          id
+          product {
+            id
+            prebuiltExpandProjectionMetafield: metafield(
+              namespace: "aces_dev"
+              key: "prebuilt_bundle_expand_projection_v1"
+            ) {
+              jsonValue
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -4,11 +4,11 @@ import { masterKitConfigV1 } from "./fixtures/master-kit-config.v1.js";
 import { resolveBundleSelection } from "./bundle-config.resolver.js";
 
 const MASTER_KIT_VARIANT_ID = "gid://shopify/ProductVariant/51505325605142";
-const EFI_FUSION_LITE = "gid://shopify/ProductVariant/51552319766806";
+const EFI_FUSION_LITE = "gid://shopify/ProductVariant/51592538587414";
 const EFI_KILLSHOT_2_PRO = "gid://shopify/ProductVariant/51552319865110";
 const FUEL_TEST = "gid://shopify/ProductVariant/51505348346134";
 const FUEL_TEST_2 = "gid://shopify/ProductVariant/51518319591702";
-const IGNITION_BLACK_JACK = "gid://shopify/ProductVariant/51552321011990";
+const IGNITION_BLACK_JACK = "gid://shopify/ProductVariant/51592730706198";
 const IGNITION_HIGH_ROLLER = "gid://shopify/ProductVariant/51552321110294";
 const DISPLAY_8_HD = "gid://shopify/ProductVariant/51552322584854";
 const PARENT_PRODUCT_GID = "gid://shopify/Product/999";

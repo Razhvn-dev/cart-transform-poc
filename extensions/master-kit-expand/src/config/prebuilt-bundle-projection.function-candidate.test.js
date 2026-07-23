@@ -82,6 +82,7 @@ describe("pre-built projection Function candidate", () => {
         _component_group: "efi_system",
         _component_sequence: "1",
       });
+    expect(runProjectionCandidate({ cart: { lines: [line()] } })).toEqual(candidate.result);
   });
 
   it("fails closed for a tampered projection or parent mismatch", () => {

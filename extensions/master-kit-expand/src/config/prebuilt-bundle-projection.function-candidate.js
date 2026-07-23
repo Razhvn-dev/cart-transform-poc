@@ -1,74 +1,74 @@
-import { findUnsupportedFunctionResultShape } from "./bundle-runtime.result-comparator.js";
 import { parseJsonObjectMetafield } from "./bundle-runtime.extraction.js";
 import { observePrebuiltBundleCartMetadata } from "./prebuilt-bundle-cart-metadata.observation.js";
-import { validatePrebuiltBundleExpandProjection } from "./prebuilt-bundle-expand-projection.js";
+import { isValidPrebuiltBundleExpandProjection } from "./prebuilt-bundle-expand-projection.js";
 
 /**
  * Hosted-runtime path for fixed pre-built bundles. Publication resolves the
  * complete selection; Checkout validates one compact projection and emits it.
  */
 export function buildPrebuiltBundleProjectionFunctionCandidate(input) {
+  const lines = input?.cart?.lines ?? [];
   const prepared = [];
-  const seenBundleIds = new Set();
+  const seenBundleIds = lines.length > 1 ? new Set() : null;
   let validMetadataCount = 0;
   let invalid = false;
 
-  for (const line of input?.cart?.lines ?? []) {
+  for (const line of lines) {
     const metafield = line?.merchandise?.product?.prebuiltExpandProjectionMetafield;
     if (!metafield) continue;
 
-    const metadata = observePrebuiltBundleCartMetadata(line);
+    const metadata = observePrebuiltBundleCartMetadata(line, false);
     const projection = parseJsonObjectMetafield(metafield);
-    if (metadata.status !== "valid" || !projectionMatchesLine(projection, line)) {
+    if (metadata == null || !projectionMatchesLine(projection, line)) {
       invalid = true;
       continue;
     }
 
     validMetadataCount += 1;
-    if (seenBundleIds.has(metadata.metadata.bundle_instance_id)) {
+    if (seenBundleIds?.has(metadata.bundle_instance_id)) {
       invalid = true;
       continue;
     }
-    seenBundleIds.add(metadata.metadata.bundle_instance_id);
-    prepared.push({ line, metadata: metadata.metadata, projection });
+    seenBundleIds?.add(metadata.bundle_instance_id);
+    prepared.push({ line, metadata, projection });
   }
 
   const result = invalid ? { operations: [] } : {
-    operations: prepared.map(({ line, metadata, projection }) => ({
-      expand: {
-        cartLineId: line.id,
-        title: projection.parent.title,
-        expandedCartItems: projection.components.map((component) => ({
-          merchandiseId: component.variant_gid,
-          quantity: 1,
-          attributes: buildMetadataV1Attributes(metadata, projection, component),
-          price: {
-            adjustment: {
-              fixedPricePerUnit: { amount: component.fixed_price_per_unit },
-            },
-          },
-        })),
-      },
-    })),
+    operations: prepared.map(buildExpandOperation),
   };
-  const operationShapeIssues = findUnsupportedFunctionResultShape(result, "projection");
+  const operationShapeIssues = [];
   const ready = !invalid
     && validMetadataCount > 0
     && prepared.length === validMetadataCount
     && operationShapeIssues.length === 0;
 
-  return deepFreeze({
+  return {
     status: ready ? "ready" : "unavailable",
     valid_metadata_count: validMetadataCount,
     prepared_candidate_count: prepared.length,
     operation_shape_issues: operationShapeIssues,
     result: ready ? result : { operations: [] },
-  });
+  };
+}
+
+export function buildSinglePrebuiltBundleProjectionFunctionResult(input) {
+  const lines = input?.cart?.lines;
+  if (lines == null || lines.length !== 1) return null;
+  const line = lines[0];
+  const metafield = line?.merchandise?.product?.prebuiltExpandProjectionMetafield;
+  if (!metafield) return null;
+
+  const metadata = observePrebuiltBundleCartMetadata(line, false);
+  const projection = metafield.jsonValue;
+  if (metadata == null || !projectionMatchesLine(projection, line)) {
+    return { operations: [] };
+  }
+  return { operations: [buildExpandOperation({ line, metadata, projection })] };
 }
 
 function projectionMatchesLine(projection, line) {
   return projection != null
-    && validatePrebuiltBundleExpandProjection(projection).length === 0
+    && isValidPrebuiltBundleExpandProjection(projection)
     && projection.parent.variant_gid === line?.merchandise?.id
     && projection.parent.product_gid === line?.merchandise?.product?.id
     && projectionPriceMatchesLine(projection, line);
@@ -77,8 +77,9 @@ function projectionMatchesLine(projection, line) {
 function projectionPriceMatchesLine(projection, line) {
   const parentPriceCents = decimalToCents(line?.cost?.amountPerQuantity?.amount);
   const componentPriceCents = projection.components.reduce((total, component) => {
-    const cents = decimalToCents(component.fixed_price_per_unit);
-    return total == null || cents == null ? null : total + cents;
+    // Projection validation already guarantees the fixed two-decimal shape.
+    const cents = Math.round(Number(component.fixed_price_per_unit) * 100);
+    return total == null || !Number.isSafeInteger(cents) ? null : total + cents;
   }, 0);
   return parentPriceCents != null && componentPriceCents === parentPriceCents;
 }
@@ -90,27 +91,40 @@ function decimalToCents(value) {
   return Number.isSafeInteger(cents) ? cents : null;
 }
 
-function buildMetadataV1Attributes(metadata, projection, component) {
-  return [
-    attribute("_bundle_id", metadata.bundle_instance_id),
-    attribute("_bundle_schema_version", metadata.schema_version),
-    attribute("_parent_product_gid", projection.parent.product_gid),
-    attribute("_parent_variant_gid", projection.parent.variant_gid),
-    attribute("_parent_sku", projection.parent.sku),
-    attribute("_parent_title", projection.parent.title),
-    attribute("_component_group", component.group),
-    attribute("_component_role", component.role),
-    attribute("_component_variant_gid", component.variant_gid),
-    attribute("_component_sequence", String(component.sequence)),
+function buildExpandOperation({ line, metadata, projection }) {
+  const parentAttributes = [
+    { key: "_bundle_id", value: metadata.bundle_instance_id },
+    { key: "_bundle_schema_version", value: metadata.schema_version },
+    { key: "_parent_product_gid", value: projection.parent.product_gid },
+    { key: "_parent_variant_gid", value: projection.parent.variant_gid },
+    { key: "_parent_sku", value: projection.parent.sku },
+    { key: "_parent_title", value: projection.parent.title },
   ];
-}
-
-function attribute(key, value) {
-  return { key, value };
-}
-
-function deepFreeze(value) {
-  if (value == null || typeof value !== "object" || Object.isFrozen(value)) return value;
-  Object.values(value).forEach(deepFreeze);
-  return Object.freeze(value);
+  return {
+    expand: {
+      cartLineId: line.id,
+      title: projection.parent.title,
+      expandedCartItems: projection.components.map((component) => ({
+        merchandiseId: component.variant_gid,
+        quantity: 1,
+        attributes: [
+          parentAttributes[0],
+          parentAttributes[1],
+          parentAttributes[2],
+          parentAttributes[3],
+          parentAttributes[4],
+          parentAttributes[5],
+          { key: "_component_group", value: component.group },
+          { key: "_component_role", value: component.role },
+          { key: "_component_variant_gid", value: component.variant_gid },
+          { key: "_component_sequence", value: String(component.sequence) },
+        ],
+        price: {
+          adjustment: {
+            fixedPricePerUnit: { amount: component.fixed_price_per_unit },
+          },
+        },
+      })),
+    },
+  };
 }

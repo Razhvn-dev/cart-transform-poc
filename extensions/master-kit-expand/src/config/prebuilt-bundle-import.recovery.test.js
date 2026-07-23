@@ -19,9 +19,9 @@ function plan() {
       product_series_key: "aces-efi",
       parent_binding: structuredClone(masterKitConfigV1.parent),
       components: [
-        { variant_gid: "gid://shopify/ProductVariant/51552319766806", quantity: 1 },
+        { variant_gid: "gid://shopify/ProductVariant/51592538587414", quantity: 1 },
         { variant_gid: "gid://shopify/ProductVariant/51505348346134", quantity: 1 },
-        { variant_gid: "gid://shopify/ProductVariant/51552321011990", quantity: 1 },
+        { variant_gid: "gid://shopify/ProductVariant/51592730706198", quantity: 1 },
       ],
     }],
     mappings: [{
@@ -49,6 +49,7 @@ function ledgerRecord(reviewed, state, overrides = {}) {
   const record = reviewed.records[0];
   return {
     schema_version: "prebuilt_bundle_import_ledger.v1",
+    import_id: reviewed.import_id,
     source_identity: record.source_identity,
     source_fingerprint: record.source_fingerprint,
     target_bundle_definition_id: record.target.bundle_definition_id,
@@ -77,6 +78,22 @@ describe("pre-built import recovery assessment", () => {
     });
     expect(result.summary.already_completed).toBe(1);
     expect(result.records[0]).toMatchObject({ status: "already_completed", reason: null });
+  });
+
+  it("blocks a completed ledger row from a different import even when its content matches", () => {
+    const reviewed = plan();
+    const result = assessPrebuiltBundleImportRecovery({
+      plan: reviewed,
+      ledger_records: [ledgerRecord(reviewed, "completed", {
+        import_id: "61c40f6d-52b0-4a72-8000-000000000099",
+      })],
+    });
+
+    expect(result).toMatchObject({
+      status: "blocked",
+      summary: { already_completed: 0, retry_conflict: 1 },
+      records: [{ status: "retry_conflict", reason: "LEDGER_CONTENT_MISMATCH" }],
+    });
   });
 
   it("requires target reconciliation after pending or failed target outcomes", () => {

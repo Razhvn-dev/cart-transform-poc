@@ -1,0 +1,37 @@
+{
+  "schema_version": "shared_core_parity.v1",
+  "cases": [
+    {
+      "name": "standard",
+      "metadata": "valid",
+      "efi": "gid://shopify/ProductVariant/51592538587414",
+      "fuel": "gid://shopify/ProductVariant/51505348346134",
+      "ignition": "gid://shopify/ProductVariant/51592730706198",
+      "display": null
+    },
+    {
+      "name": "advanced",
+      "metadata": "valid",
+      "efi": "gid://shopify/ProductVariant/51552319865110",
+      "fuel": "gid://shopify/ProductVariant/51518319591702",
+      "ignition": "gid://shopify/ProductVariant/51552321110294",
+      "display": "gid://shopify/ProductVariant/51552322584854"
+    },
+    {
+      "name": "compatibility",
+      "metadata": "valid",
+      "efi": "gid://shopify/ProductVariant/51592538587414",
+      "fuel": "gid://shopify/ProductVariant/51518319591702",
+      "ignition": "gid://shopify/ProductVariant/51592730706198",
+      "display": "gid://shopify/ProductVariant/51552322584854"
+    },
+    {
+      "name": "legacy",
+      "metadata": "legacy",
+      "efi": "gid://shopify/ProductVariant/51592538587414",
+      "fuel": "gid://shopify/ProductVariant/51505348346134",
+      "ignition": "gid://shopify/ProductVariant/51592730706198",
+      "display": null
+    }
+  ]
+}

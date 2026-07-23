@@ -7,9 +7,9 @@ import { masterKitConfigV1 } from "./fixtures/master-kit-config.v1.js";
 
 const MASTER_KIT_VARIANT_ID = "gid://shopify/ProductVariant/51505325605142";
 const PARENT_PRODUCT_GID = "gid://shopify/Product/10600519598358";
-const EFI_FUSION_LITE = "gid://shopify/ProductVariant/51552319766806";
+const EFI_FUSION_LITE = "gid://shopify/ProductVariant/51592538587414";
 const FUEL_TEST = "gid://shopify/ProductVariant/51505348346134";
-const IGNITION_BLACK_JACK = "gid://shopify/ProductVariant/51552321011990";
+const IGNITION_BLACK_JACK = "gid://shopify/ProductVariant/51592730706198";
 
 function input(metafield = null) {
   return {

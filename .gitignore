@@ -25,6 +25,7 @@ database.sqlite
 .env.*
 !.env.example
 shopify.app.local.toml
+shopify.app.rust-spike-dev.toml
 
 yarn.lock
 pnpm-lock.yaml

@@ -9,33 +9,31 @@ import {
  * query. This module is a local observation boundary, not a mapping or
  * component authority: all component resolution remains server-owned.
  */
-export function observePrebuiltBundleCartMetadata(cartLine) {
+export function observePrebuiltBundleCartMetadata(cartLine, freeze = true) {
   const metadata = readMetadata(cartLine);
-  if (!isNonEmptyString(cartLine?.id)) return result("invalid", "CART_LINE_ID_MISSING");
-  if (!metadata.bundle_instance_id) return result("missing", "BUNDLE_INSTANCE_ID_MISSING");
-  if (!UUID_REGEX.test(metadata.bundle_instance_id)) return result("invalid", "BUNDLE_INSTANCE_ID_INVALID");
-  if (metadata.schema_version !== "1") return result("invalid", "BUNDLE_SCHEMA_VERSION_INVALID");
-  if (cartLine?.quantity !== 1) return result("invalid", "BUNDLE_QUANTITY_NOT_SINGLE");
+  if (!isNonEmptyString(cartLine?.id)) return result("invalid", "CART_LINE_ID_MISSING", freeze);
+  if (!metadata.bundle_instance_id) return result("missing", "BUNDLE_INSTANCE_ID_MISSING", freeze);
+  if (!UUID_REGEX.test(metadata.bundle_instance_id)) return result("invalid", "BUNDLE_INSTANCE_ID_INVALID", freeze);
+  if (metadata.schema_version !== "1") return result("invalid", "BUNDLE_SCHEMA_VERSION_INVALID", freeze);
+  if (cartLine?.quantity !== 1) return result("invalid", "BUNDLE_QUANTITY_NOT_SINGLE", freeze);
 
   const merchandise = cartLine?.merchandise;
-  if (merchandise?.__typename !== "ProductVariant") return result("invalid", "PARENT_MERCHANDISE_INVALID");
-  if (!PRODUCT_VARIANT_GID_REGEX.test(merchandise.id)) return result("invalid", "PARENT_VARIANT_INVALID");
-  if (!PRODUCT_GID_REGEX.test(merchandise.product?.id)) return result("invalid", "PARENT_PRODUCT_INVALID");
-  if (metadata.parent_variant_gid !== merchandise.id) return result("invalid", "PARENT_VARIANT_MISMATCH");
-  if (metadata.parent_product_gid !== merchandise.product.id) return result("invalid", "PARENT_PRODUCT_MISMATCH");
+  if (merchandise?.__typename !== "ProductVariant") return result("invalid", "PARENT_MERCHANDISE_INVALID", freeze);
+  if (!PRODUCT_VARIANT_GID_REGEX.test(merchandise.id)) return result("invalid", "PARENT_VARIANT_INVALID", freeze);
+  if (!PRODUCT_GID_REGEX.test(merchandise.product?.id)) return result("invalid", "PARENT_PRODUCT_INVALID", freeze);
+  if (metadata.parent_variant_gid !== merchandise.id) return result("invalid", "PARENT_VARIANT_MISMATCH", freeze);
+  if (metadata.parent_product_gid !== merchandise.product.id) return result("invalid", "PARENT_PRODUCT_MISMATCH", freeze);
 
-  return deepFreeze({
-    status: "valid",
-    reason: null,
-    metadata: {
-      bundle_instance_id: metadata.bundle_instance_id,
-      schema_version: metadata.schema_version,
-      parent_product_gid: metadata.parent_product_gid,
-      parent_variant_gid: metadata.parent_variant_gid,
-      parent_sku: metadata.parent_sku,
-      parent_title: metadata.parent_title,
-    },
-  });
+  const normalizedMetadata = {
+    bundle_instance_id: metadata.bundle_instance_id,
+    schema_version: metadata.schema_version,
+    parent_product_gid: metadata.parent_product_gid,
+    parent_variant_gid: metadata.parent_variant_gid,
+    parent_sku: metadata.parent_sku,
+    parent_title: metadata.parent_title,
+  };
+  if (!freeze) return normalizedMetadata;
+  return deepFreeze({ status: "valid", reason: null, metadata: normalizedMetadata });
 }
 
 function readMetadata(line) {
@@ -58,8 +56,10 @@ function readAttribute(line, queryField, attributeKey) {
   return typeof attribute?.value === "string" ? attribute.value : null;
 }
 
-function result(status, reason) {
-  return deepFreeze({ status, reason, metadata: null });
+function result(status, reason, freeze) {
+  if (!freeze) return null;
+  const observed = { status, reason, metadata: null };
+  return deepFreeze(observed);
 }
 
 function isNonEmptyString(value) {

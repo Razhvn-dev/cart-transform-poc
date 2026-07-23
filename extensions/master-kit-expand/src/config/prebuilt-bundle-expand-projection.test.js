@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { compileRuntimeSnapshot } from "./bundle-runtime.compiler.js";
 import { masterKitConfigV1 } from "./fixtures/master-kit-config.v1.js";
 import {
+  calculatePrebuiltBundleExpandProjectionChecksum,
   compilePrebuiltBundleExpandProjection,
+  isValidPrebuiltBundleExpandProjection,
   validatePrebuiltBundleExpandProjection,
 } from "./prebuilt-bundle-expand-projection.js";
 import {
@@ -37,9 +39,9 @@ describe("pre-built publication-time expand projection", () => {
 
     expect(result.status).toBe("ready");
     expect(result.projection.components.map((component) => component.variant_gid)).toEqual([
-      "gid://shopify/ProductVariant/51552319766806",
+      "gid://shopify/ProductVariant/51592538587414",
       "gid://shopify/ProductVariant/51505348346134",
-      "gid://shopify/ProductVariant/51552321011990",
+      "gid://shopify/ProductVariant/51592730706198",
     ]);
     expect(result.projection.components.map((component) => component.fixed_price_per_unit))
       .toEqual(["512.99", "190.00", "47.49"]);
@@ -63,6 +65,33 @@ describe("pre-built publication-time expand projection", () => {
 
     expect(validatePrebuiltBundleExpandProjection(tamperedPrice)).toContain("projection checksum is invalid");
     expect(validatePrebuiltBundleExpandProjection(tamperedParent)).toContain("projection checksum is invalid");
+  });
+
+  it("calculates the runtime projection checksum without changing publication parity", () => {
+    const { projection } = compilePrebuiltBundleExpandProjection(fixture());
+    const tampered = {
+      ...projection,
+      components: projection.components.map((component, index) => index === 0
+        ? { ...component, fixed_price_per_unit: "1.00" }
+        : component),
+    };
+
+    expect(calculatePrebuiltBundleExpandProjectionChecksum(projection)).toBe(projection.checksum);
+    expect(calculatePrebuiltBundleExpandProjectionChecksum(tampered)).not.toBe(projection.checksum);
+  });
+
+  it("keeps fail-fast runtime validation aligned with publication validation", () => {
+    const { projection } = compilePrebuiltBundleExpandProjection(fixture());
+    const invalid = {
+      ...projection,
+      components: projection.components.map((component, index) => index === 0
+        ? { ...component, fixed_price_per_unit: "10" }
+        : component),
+    };
+
+    expect(isValidPrebuiltBundleExpandProjection(projection)).toBe(true);
+    expect(isValidPrebuiltBundleExpandProjection(invalid)).toBe(false);
+    expect(validatePrebuiltBundleExpandProjection(invalid).length).toBeGreaterThan(0);
   });
 
   it("fails closed for incomplete publication inputs", () => {

@@ -190,6 +190,14 @@ Core 与 pre-built Projection，修复 malformed JSON panic，并通过单行最
     subtotal/total `$1,740.47`。
 - 未填写 contact、delivery 或 payment 信息，未创建订单。测试购物车已清空。
 - 同一库存窗口以 CAS 从精确 `1/1` 恢复到 `0/0`，9/9 read-back 通过。
+- Huang 目视确认的正式 UAT 使用全新
+  `v67-rust-hybrid-checkout-2`。原因是已消费的 `checkout-1` 幂等键重放时
+  正确保持无库存变化；当前规划器同时拒绝 retired v66 window 和已消费的
+  v67 `checkout-1`。新窗口再次通过 Builder 3、pre-built 8/10/12 与混合
+  3+8 的相同金额验收。
+- `checkout-2` restore 请求发送后遇到 `ECONNRESET`，未重试 mutation。
+  随后的独立只读 Builder 与 catalog read-back 确认 9 个精确目标均已从
+  `1/1` 恢复到 `0/0`。
 - 最终 live read-back：
   - v64 `active`
   - v65、v66、v67 `inactive`

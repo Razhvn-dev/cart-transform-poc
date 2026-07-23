@@ -199,6 +199,16 @@ Shopify Admin UI read-only inspection refined that visibility evidence: `AS2014B
 - No contact, delivery, or payment data was entered and no order was submitted.
   The cart was cleared. The same CAS window restored all nine component
   inventory items from exact `1/1` to `0/0` with read-back verification.
+- Formal Huang-witnessed UAT used the fresh
+  `v67-rust-hybrid-checkout-2` window because replaying the already-consumed
+  `checkout-1` idempotency key correctly produced no inventory change.
+  Planning now rejects both the retired v66 window and consumed v67
+  `checkout-1`. The fresh window again passed Builder 3, pre-built 8/10/12, and
+  the mixed 3+8 cart with the same totals above.
+- The `checkout-2` restore request encountered `ECONNRESET` after dispatch.
+  No mutation retry was sent: independent write-free Builder and catalog
+  read-backs confirmed all nine exact targets had already returned from `1/1`
+  to `0/0`.
 - Final state restored v64 active; v65/v66/v67 are inactive. The existing Cart
   Transform registration and Function ID still resolve. Production, the Custom
   Distribution App, commit, and push were not touched.

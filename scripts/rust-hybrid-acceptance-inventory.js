@@ -5,12 +5,15 @@ const DEV_STORE = "huang-mvqquz1p.myshopify.com";
 const CATALOG_SCHEMA_VERSION = "dev_catalog_technical_batch_live_readback.v2";
 const PRODUCT_VARIANT_GID = /^gid:\/\/shopify\/ProductVariant\/\d+$/;
 const INVENTORY_ITEM_GID = /^gid:\/\/shopify\/InventoryItem\/\d+$/;
-const RETIRED_ACCEPTANCE_WINDOW_ID = "v66-rust-hybrid-checkout-1";
+const RETIRED_ACCEPTANCE_WINDOW_IDS = Object.freeze([
+  "v66-rust-hybrid-checkout-1",
+  "v67-rust-hybrid-checkout-1",
+]);
 const RETIRED_ACCEPTANCE_BATCH_ID = "rust-hybrid-v66-hosted-acceptance";
 
 export const BUILDER_STANDARD_INVENTORY_READBACK_SCHEMA_VERSION =
   "rust_hybrid_builder_component_inventory_readback.v1";
-export const RUST_HYBRID_ACCEPTANCE_WINDOW_ID = "v67-rust-hybrid-checkout-1";
+export const RUST_HYBRID_ACCEPTANCE_WINDOW_ID = "v67-rust-hybrid-checkout-2";
 export const RUST_HYBRID_ACCEPTANCE_BATCH_ID =
   "rust-hybrid-v67-hosted-acceptance";
 
@@ -189,11 +192,13 @@ export function buildRustHybridAcceptanceExecutorArguments({
   if (execute !== true) {
     throw new Error("inventory execution requires explicit --execute");
   }
-  if (result?.window_id === RETIRED_ACCEPTANCE_WINDOW_ID
-    || (typeof confirmation === "string"
-      && confirmation.includes(RETIRED_ACCEPTANCE_WINDOW_ID))) {
+  const retiredWindowId = RETIRED_ACCEPTANCE_WINDOW_IDS.find(
+    (windowId) => result?.window_id === windowId
+      || (typeof confirmation === "string" && confirmation.includes(windowId)),
+  );
+  if (retiredWindowId != null) {
     throw new Error(
-      `retired acceptance window ${RETIRED_ACCEPTANCE_WINDOW_ID} is inactive`,
+      `retired acceptance window ${retiredWindowId} is inactive`,
     );
   }
   if (result?.inventory_plan?.batch_id === RETIRED_ACCEPTANCE_BATCH_ID) {

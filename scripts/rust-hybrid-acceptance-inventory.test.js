@@ -215,7 +215,7 @@ describe("Rust hybrid hosted acceptance inventory planning", () => {
       builderReadback: builderReadback(),
     });
 
-    expect(RUST_HYBRID_ACCEPTANCE_WINDOW_ID).toBe("v67-rust-hybrid-checkout-1");
+    expect(RUST_HYBRID_ACCEPTANCE_WINDOW_ID).toBe("v67-rust-hybrid-checkout-2");
     expect(RUST_HYBRID_ACCEPTANCE_BATCH_ID).toBe("rust-hybrid-v67-hosted-acceptance");
     expect(result.window_id).toBe(RUST_HYBRID_ACCEPTANCE_WINDOW_ID);
     expect(result.inventory_plan.batch_id).toBe(RUST_HYBRID_ACCEPTANCE_BATCH_ID);
@@ -225,7 +225,7 @@ describe("Rust hybrid hosted acceptance inventory planning", () => {
     expect(result.excluded_parent_variant_ids).toContain(PARENTS["AS2014B-BT"]);
   });
 
-  test("explicitly rejects superseded v66 window, batch, and confirmation", () => {
+  test("explicitly rejects superseded v66 and already-consumed v67 windows", () => {
     const ready = planRustHybridAcceptanceInventory({
       catalogReadback: catalogReadback(),
       builderReadback: builderReadback(),
@@ -266,6 +266,17 @@ describe("Rust hybrid hosted acceptance inventory planning", () => {
       confirmation: staleConfirmation,
       planPath: "plan.json",
     })).toThrow(/retired acceptance window.*v66-rust-hybrid-checkout-1/i);
+
+    const consumedConfirmation = ready.execution_confirmations.open.replace(
+      RUST_HYBRID_ACCEPTANCE_WINDOW_ID,
+      "v67-rust-hybrid-checkout-1",
+    );
+    expect(() => buildRustHybridAcceptanceExecutorArguments({
+      execute: true,
+      phase: "open",
+      confirmation: consumedConfirmation,
+      planPath: "plan.json",
+    })).toThrow(/retired acceptance window.*v67-rust-hybrid-checkout-1/i);
   });
 
   test("deduplicates shared pre-built and Builder components by exact Variant identity", () => {
@@ -449,7 +460,7 @@ describe("Rust hybrid hosted acceptance inventory planning", () => {
       const output = JSON.parse(execution.stdout);
       expect(output).toEqual(expect.objectContaining({
         mode: "local_plan_only",
-        window_id: "v67-rust-hybrid-checkout-1",
+        window_id: "v67-rust-hybrid-checkout-2",
         plan_checksum: expect.stringMatching(/^[0-9a-f]{8}$/),
         selected: expect.any(Array),
         no_action: expect.any(Array),

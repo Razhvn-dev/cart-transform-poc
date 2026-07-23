@@ -5,17 +5,13 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
-import { PrismaClient } from "@prisma/client";
-
 import { DEV_SHOPIFY_APP_CLIENT_ID } from "../extensions/master-kit-expand/src/config/shopify-dev-persistence.adapter.js";
-import { resolveDevShopifySessionCredentials } from "./dev-shopify-session-credentials.js";
 import {
   RUST_HYBRID_BUILDER_READBACK_TARGET,
   assertRustHybridBuilderReadbackIdentity,
   executeRustHybridBuilderInventoryReadback,
 } from "./rust-hybrid-builder-inventory-readback.js";
 import { createShopifyCliReadSafeExecutor } from "./shopify-cli-read-safe-executor.js";
-import { createShopifySessionAdminExecutor } from "./shopify-session-admin-executor.js";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -36,13 +32,16 @@ export async function runReadDevRustHybridBuilderInventory({
   rootPath = root,
   dependencies = {},
 } = {}) {
+  if (args.includes("--session-transport")) {
+    throw new Error("session transport is disabled until trusted app identity is available");
+  }
   const options = parseArguments(args);
   const stdout = dependencies.stdout ?? ((value) => console.log(value));
   const stderr = dependencies.stderr ?? ((value) => console.error(value));
   if (options.help) {
     stdout(
       "Usage: node scripts/read-dev-rust-hybrid-builder-inventory.mjs "
-      + "[--output <path>] [--session-transport]\n"
+      + "[--output <path>]\n"
       + "Runs one read-only Shopify Admin GraphQL query through Shopify CLI by default.",
     );
     return null;
@@ -61,50 +60,27 @@ export async function runReadDevRustHybridBuilderInventory({
   );
 
   let directory = null;
-  let prisma = null;
   try {
-    let execute;
-    if (options.sessionTransport) {
-      const resolveSessionCredentials = dependencies.resolveSessionCredentials
-        ?? resolveDevShopifySessionCredentials;
-      const credentials = resolveSessionCredentials({
-        expectedClientId: RUST_HYBRID_BUILDER_READBACK_TARGET.clientId,
-        clientId: identity.clientId,
-        clientSecret: process.env.SHOPIFY_API_SECRET,
-      });
-      const createPrisma = dependencies.createPrisma ?? (() => new PrismaClient());
-      const createSessionExecutor = dependencies.createSessionExecutor
-        ?? createShopifySessionAdminExecutor;
-      prisma = createPrisma();
-      execute = createSessionExecutor({
-        prisma,
-        shop: identity.store,
+    const makeTempDirectory = dependencies.makeTempDirectory ?? mkdtemp;
+    const createCliExecutor = dependencies.createCliExecutor
+      ?? createShopifyCliReadSafeExecutor;
+    directory = await makeTempDirectory(
+      join(tmpdir(), "aces-rust-hybrid-builder-readback-"),
+    );
+    const execute = createCliExecutor({
+      cliEntrypoint: resolve(rootPath, "node_modules/@shopify/cli/bin/run.js"),
+      directory,
+      execFileAsync: dependencies.execFileAsync ?? promisify(execFile),
+      root: rootPath,
+      target: {
+        appConfig: identity.appConfig,
+        store: identity.store,
         apiVersion: identity.apiVersion,
-        clientId: credentials.clientId,
-        clientSecret: credentials.clientSecret,
-      });
-    } else {
-      const makeTempDirectory = dependencies.makeTempDirectory ?? mkdtemp;
-      const createCliExecutor = dependencies.createCliExecutor
-        ?? createShopifyCliReadSafeExecutor;
-      directory = await makeTempDirectory(
-        join(tmpdir(), "aces-rust-hybrid-builder-readback-"),
-      );
-      execute = createCliExecutor({
-        cliEntrypoint: resolve(rootPath, "node_modules/@shopify/cli/bin/run.js"),
-        directory,
-        execFileAsync: dependencies.execFileAsync ?? promisify(execFile),
-        root: rootPath,
-        target: {
-          appConfig: identity.appConfig,
-          store: identity.store,
-          apiVersion: identity.apiVersion,
-        },
-        readFileImpl: dependencies.readFileImpl ?? readFile,
-        wait: dependencies.wait,
-        readOnlyAttempts: 2,
-      });
-    }
+      },
+      readFileImpl: dependencies.readFileImpl ?? readFile,
+      wait: dependencies.wait,
+      readOnlyAttempts: 2,
+    });
 
     const report = await executeRustHybridBuilderInventoryReadback({ identity, execute });
     if (options.outputPath) {
@@ -118,19 +94,15 @@ export async function runReadDevRustHybridBuilderInventory({
     stdout(JSON.stringify(report, null, 2));
     return report;
   } finally {
-    try {
-      await prisma?.$disconnect();
-    } finally {
-      if (directory) {
-        const removeDirectory = dependencies.removeDirectory ?? rm;
-        await removeDirectory(directory, { recursive: true, force: true });
-      }
+    if (directory) {
+      const removeDirectory = dependencies.removeDirectory ?? rm;
+      await removeDirectory(directory, { recursive: true, force: true });
     }
   }
 }
 
 function parseArguments(args) {
-  const options = { help: false, outputPath: null, sessionTransport: false };
+  const options = { help: false, outputPath: null };
   for (let index = 0; index < args.length;) {
     const key = args[index];
     if (key === "--help") {
@@ -140,12 +112,7 @@ function parseArguments(args) {
       continue;
     }
     if (key === "--session-transport") {
-      if (options.sessionTransport) {
-        throw new Error("--session-transport may only be provided once");
-      }
-      options.sessionTransport = true;
-      index += 1;
-      continue;
+      throw new Error("session transport is disabled until trusted app identity is available");
     }
     if (key !== "--output") {
       throw new Error(`unsupported argument "${String(key)}"; this command is read-only`);

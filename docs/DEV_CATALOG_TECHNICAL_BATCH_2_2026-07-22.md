@@ -148,3 +148,22 @@ returns `true`. The batch executor returns `true` only when this invocation ente
 an incomplete record's persistence path, while an all-completed idempotent apply
 returns `false`. Operators and later evidence aggregation must use this flag instead
 of inferring writes from `mode` or `status`.
+
+## Fresh read-only operations rehearsal
+
+A later read-only rehearsal refreshed both target reconciliations against development
+app `cart-transform-poc-dev` and store `huang-mvqquz1p.myshopify.com`. No Shopify
+mutation was executed. Both targets still matched execution manifest `68907102`
+across Definition, published Revision, Runtime Snapshot, Projection, active pointer,
+PublicationRecord, and completed import ledger. Replaying the fresh evidence through
+the batch executor returned `durable_target_complete` for both targets with
+`shopify_writes_performed=false`.
+
+Fresh catalogue and inventory read-back also found no price or identity drift. All
+seven temporary acceptance targets remain at their restored original `0/0` state;
+`AC2008` remains `8 available / 9 on_hand` and `AS2021` remains `20/20`. The two
+parents still require controlled acceptance inventory windows, and the Admin API
+returned no `onlineStoreUrl` for either parent, so sales-channel visibility remains a
+separate pre-storefront review condition. The executor correctly rejected historical
+reconciliation JSON older than 15 minutes before the refresh; operational replay must
+always use current read-only evidence.

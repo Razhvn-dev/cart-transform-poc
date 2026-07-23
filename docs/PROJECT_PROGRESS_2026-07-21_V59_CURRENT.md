@@ -89,3 +89,24 @@ Bundle Admin 本地基线已完成。开发店的通用 pre-built Projection 路
 - 这是本地证据格式修复，不会重新打开 v63 已结束的库存窗口；v63 的 7 个测试 SKU 仍保持已读回确认的原始 `0/0`。
 - 修复后的最新验证为 109 个测试文件、642 项测试全部通过，完整 `validate:local` 与 `git diff --check` 通过。
 - 批次执行与库存窗口输出已统一增加精确的 `shopify_writes_performed`：只读、预检和 completed 幂等重跑为 `false`；本次真正进入持久化或库存 mutation 并完成读回时为 `true`，后续汇总不得再从 `mode` 或 `status` 猜测是否发生写入。
+
+## 2026-07-22 批次运营只读演练
+
+- 使用活动开发应用 `cart-transform-poc-dev` 和开发店 `huang-mvqquz1p.myshopify.com` 对第二技术批次执行了新的只读实时对账；未执行 Shopify mutation。
+- `AS2008C` 与 `AS2020PS` 的 Definition、published Revision、Runtime Snapshot、Projection、active pointer、PublicationRecord 与 completed ledger 均与执行清单 `68907102` 精确一致。
+- 两条新鲜对账证据经批次执行器可信证据入口重放后均返回 `durable_target_complete`，且 `shopify_writes_performed=false`；completed 批次不会重新进入持久化路径。
+- 新鲜商品与库存读回确认两个父商品及全部组件仍为 `ACTIVE`，价格未漂移；7 个临时库存目标保持原始 `0/0`，`AC2008` 保持 `8 available / 9 on_hand`，`AS2021` 保持 `20/20`。
+- 两个父商品当前仍需要受控验收库存窗口，Admin API 的 `onlineStoreUrl` 为空需要在下一次真实 storefront 验收前单独复核销售渠道；这两项是已知验收前置条件，不是持久化漂移。
+- 运行时正确拒绝超过 15 分钟的旧对账证据，运营人员必须刷新只读状态，不能用历史 JSON 代替当前 Shopify 状态。
+- 隔离 publication rehearsal `e9011d4e-5a14-4e0d-9000-000000000000` 已完成 candidate 发布、幂等重放、分步 rollback 和最终只读对账。baseline、candidate、rollback 三条 PublicationRecord 均存在，Definition、Runtime Snapshot 和 active pointer 已稳定恢复到 baseline Revision `...0001`，Snapshot checksum 为 `23143031`。
+- Shopify CLI 间歇性 TLS/远端结果未知不再要求盲目重放 mutation：当前所有 publication rehearsal 对账、CAS 探针和恢复 mutation 仅允许通过 `shopify.app.dev.toml` 的 Shopify CLI；persisted session transport 在能够于 token 读取前证明可信应用身份之前，对读写均禁用。每个 invocation 最多执行一个 mutation，并在前后重新读取远端状态；baseline、candidate 与 rollback 都只允许从白名单单调状态继续。
+- stale-CAS 已改用可自动清理的隔离 Metafield 探针验证：有效 digest 更新成功，旧 digest 返回 `STALE_OBJECT`，探针随后删除并确认不存在；主演练不再使用“相同值 + 错误 digest”这一 Shopify 可按幂等 no-op 处理的无效验证。
+- 最新本地验证为 117 个测试文件 / 671 项测试全部通过；`npm run validate:local` 已覆盖应用构建、Function 433 项测试、production/dev typegen 与构建，以及 production-clean 断言。`git diff --check` 通过。
+- 第三技术批次已把 8、10、12 组件的三个 quantity-one 代表持久化到开发店；三条 Definition、Revision、Snapshot、Projection、active pointer、PublicationRecord 与 completed ledger 均精确读回，随后幂等重放为 `already_completed` 且 `shopify_writes_performed=false`。父商品 Online Store 可见性和库存窗口仍是后续真实 Checkout 验收前置条件。
+
+## 2026-07-22 第三批次 Storefront 诊断
+
+- 三个父商品已确认对 Online Store 可见，测试主题已保存并读回三个精确的 `Prebuilt bundle metadata` 区块。
+- 清理失效的临时 `shopify app dev` 预览后，活动 v63 扩展资源恢复；`AS2014B-BT` 已能在购物车保持一个父商品并携带完整六项 Bundle Metadata V1。
+- Checkout 尚未拆分的根因已定位为组件不可售库存，而不是映射、Projection、价格或前端属性：8 个组件的可售数量全部为 `0`，其中 7 个为 `DENY`；`AZ0004`、`AZ0010`、`AZ0009`、`AE1052`、`AE1060`、`AH2500`、`AZ0042`、`AS2038` 在 `Shop location` 的精确基线均为 `available=0 / on_hand=0`；Projection 的 8 项固定价格精确合计父价 `$989.99`。
+- 临时购物车已清空，未填写结账资料、未提交订单、未修改库存。下一步是获得精确库存窗口授权后，把开发店组件临时设为可售，完成 Checkout 验收并立即恢复原值。

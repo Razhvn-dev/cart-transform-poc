@@ -140,9 +140,8 @@ export function findUnsupportedFunctionResultShape(result, source = "candidate")
 function collectUnsupportedKeys(value, supportedKeys, path, source, differences) {
   if (!isPlainObject(value)) return;
 
-  const supported = new Set(supportedKeys);
   Object.keys(value)
-    .filter((key) => !supported.has(key))
+    .filter((key) => !supportedKeys.includes(key))
     .sort()
     .forEach((key) => {
       differences.push({

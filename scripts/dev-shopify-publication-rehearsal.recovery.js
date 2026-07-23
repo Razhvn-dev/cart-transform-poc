@@ -17,10 +17,7 @@ export class DevPublicationRehearsalRecoveryError extends Error {
   }
 }
 
-// This recovery is deliberately monotonic. It never writes either isolated
-// product metafield: both already have the intended baseline values. It only
-// completes the matching Metaobject lifecycle and its audit record.
-export function createDevPublicationRehearsalRecovery(remote, runId) {
+export function createExpectedDevPublicationBaselineRecovery(runId) {
   const execution = createDevPublicationRehearsalExecution(runId);
   const { identifiers, definition: initialDefinition, baselineRevision: initialRevision } = execution;
   const snapshot = compileRuntimeSnapshot(initialRevision.configuration);
@@ -30,13 +27,6 @@ export function createDevPublicationRehearsalRecovery(remote, runId) {
     checksum: snapshot.checksum,
     configuration_version: snapshot.configuration_version,
   };
-
-  assertRemoteIdentity(remote, identifiers);
-  assertSnapshotAndPointer(remote, identifiers.baselineRevisionId, snapshotRef);
-  assertAbsent(remote.candidateRevision, "candidate revision");
-  assertAbsent(remote.candidatePublication, "candidate publication");
-  assertAbsent(remote.rollbackPublication, "rollback publication");
-
   const targetDomain = publishRevision({
     definition: initialDefinition,
     revisions: [initialRevision],
@@ -44,8 +34,6 @@ export function createDevPublicationRehearsalRecovery(remote, runId) {
     runtimeSnapshotRef: snapshotRef,
     updatedAt: DEV_PUBLICATION_REHEARSAL_AT,
   });
-  const targetRevision = targetDomain.revisions[0];
-  const targetDefinition = targetDomain.definition;
   const publicationAttempt = recordedAttempt({
     publicationId: identifiers.baselinePublicationId,
     revision: initialRevision,
@@ -70,11 +58,39 @@ export function createDevPublicationRehearsalRecovery(remote, runId) {
     domain: targetDomain,
     publication_attempt: publicationAttempt,
   };
-  const targetPublication = {
-    publication_attempt: publicationAttempt,
-    result,
-    domain: targetDomain,
+  return {
+    execution,
+    identifiers,
+    snapshot_ref: snapshotRef,
+    target: {
+      definition: targetDomain.definition,
+      revision: targetDomain.revisions[0],
+      publication: {
+        publication_attempt: publicationAttempt,
+        result,
+        domain: targetDomain,
+      },
+    },
   };
+}
+
+// This recovery is deliberately monotonic. It never writes either isolated
+// product metafield: both already have the intended baseline values. It only
+// completes the matching Metaobject lifecycle and its audit record.
+export function createDevPublicationRehearsalRecovery(remote, runId) {
+  const expected = createExpectedDevPublicationBaselineRecovery(runId);
+  const { execution, identifiers, snapshot_ref: snapshotRef, target } = expected;
+  const { definition: initialDefinition, baselineRevision: initialRevision } = execution;
+
+  assertRemoteIdentity(remote, identifiers);
+  assertSnapshotAndPointer(remote, identifiers.baselineRevisionId, snapshotRef);
+  assertAbsent(remote.candidateRevision, "candidate revision");
+  assertAbsent(remote.candidatePublication, "candidate publication");
+  assertAbsent(remote.rollbackPublication, "rollback publication");
+
+  const targetRevision = target.revision;
+  const targetDefinition = target.definition;
+  const targetPublication = target.publication;
 
   const revisionStep = classify(remote.baselineRevision, initialRevision, targetRevision, "baseline revision");
   const definitionStep = classify(remote.definition, initialDefinition, targetDefinition, "definition");
@@ -94,14 +110,17 @@ export function createDevPublicationRehearsalRecovery(remote, runId) {
       snapshot: remote.snapshot.compareDigest,
       active_revision: remote.activeRevision.compareDigest,
     },
-    target: { definition: targetDefinition, revision: targetRevision, publication: targetPublication },
-    steps: {
-      write_revision: revisionStep === "initial",
-      write_definition: definitionStep === "initial",
-      write_publication: publicationStep === "absent",
-    },
+    target,
+    steps: nextStep({ revisionStep, definitionStep, publicationStep }),
     status: publicationStep === "target" ? "already_recovered" : "ready_to_recover",
   };
+}
+
+function nextStep({ revisionStep, definitionStep, publicationStep }) {
+  if (revisionStep === "initial") return { write_revision: true };
+  if (definitionStep === "initial") return { write_definition: true };
+  if (publicationStep === "absent") return { write_publication: true };
+  return {};
 }
 
 function recordedAttempt({ publicationId, revision, runtimeSnapshotRef }) {

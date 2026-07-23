@@ -384,50 +384,25 @@ describe("Rust hybrid Builder inventory read-back", () => {
     ]]);
   });
 
-  test("CLI uses the legacy session transport only when explicitly requested and disconnects Prisma", async () => {
+  test("CLI rejects the untrusted session transport before reading credentials or creating transport", async () => {
     const { runReadDevRustHybridBuilderInventory } = await importCliModuleSafely();
-    const disconnect = vi.fn().mockResolvedValue(undefined);
-    const execute = vi.fn().mockResolvedValue(livePayload());
-    const sessionExecutorCalls = [];
-    const credentialCalls = [];
+    const resolveSessionCredentials = vi.fn();
+    const createPrisma = vi.fn();
+    const makeTempDirectory = vi.fn();
 
-    const report = await runReadDevRustHybridBuilderInventory({
+    await expect(runReadDevRustHybridBuilderInventory({
       args: ["--session-transport"],
       rootPath: process.cwd(),
       dependencies: {
-        makeTempDirectory: async () => {
-          throw new Error("session transport must not create a CLI temp directory");
-        },
-        resolveSessionCredentials: (options) => {
-          credentialCalls.push(options);
-          return {
-            clientId: RUST_HYBRID_BUILDER_READBACK_TARGET.clientId,
-            clientSecret: "test-secret",
-          };
-        },
-        createPrisma: () => ({ $disconnect: disconnect }),
-        createSessionExecutor: (options) => {
-          sessionExecutorCalls.push(options);
-          return execute;
-        },
+        makeTempDirectory,
+        resolveSessionCredentials,
+        createPrisma,
         stdout: () => {},
         stderr: () => {},
       },
-    });
-
-    expect(report.shopify_writes_performed).toBe(false);
-    expect(credentialCalls).toEqual([{
-      expectedClientId: RUST_HYBRID_BUILDER_READBACK_TARGET.clientId,
-      clientId: RUST_HYBRID_BUILDER_READBACK_TARGET.clientId,
-      clientSecret: process.env.SHOPIFY_API_SECRET,
-    }]);
-    expect(sessionExecutorCalls).toEqual([expect.objectContaining({
-      shop: RUST_HYBRID_BUILDER_READBACK_TARGET.store,
-      apiVersion: RUST_HYBRID_BUILDER_READBACK_TARGET.apiVersion,
-      clientId: RUST_HYBRID_BUILDER_READBACK_TARGET.clientId,
-      clientSecret: "test-secret",
-    })]);
-    expect(execute).toHaveBeenCalledOnce();
-    expect(disconnect).toHaveBeenCalledOnce();
+    })).rejects.toThrow(/session transport is disabled/i);
+    expect(resolveSessionCredentials).not.toHaveBeenCalled();
+    expect(createPrisma).not.toHaveBeenCalled();
+    expect(makeTempDirectory).not.toHaveBeenCalled();
   });
 });

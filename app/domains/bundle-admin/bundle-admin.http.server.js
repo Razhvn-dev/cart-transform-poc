@@ -72,29 +72,22 @@ export function createBundleAdminRouteHandlers({ authenticateAdmin, service, get
       getService,
       input: async ({ request }) => {
         const body = await jsonBody(request);
-        if (body.import_package !== undefined) {
-          if (typeof body.import_package !== "string" && !isPlainObject(body.import_package)) {
-            throw new BundleAdminRequestError("import_package must be a JSON string or object");
-          }
-          return { import_package: body.import_package };
-        }
-        if (body.raw_source_export !== undefined || body.source_mapping_profile !== undefined) {
-          return {
-            import_id: requiredString(body.import_id, "import_id"),
-            raw_source_export: requiredJsonContainer(body.raw_source_export, "raw_source_export"),
-            source_mapping_profile: requiredObject(body.source_mapping_profile, "source_mapping_profile"),
-            mappings: requiredArray(body.mappings, "mappings"),
-            pilot_scope: requiredObject(body.pilot_scope, "pilot_scope"),
-          };
-        }
-        return {
-          import_id: requiredString(body.import_id, "import_id"),
-          source_records: requiredArray(body.source_records, "source_records"),
-          mappings: requiredArray(body.mappings, "mappings"),
-          pilot_scope: requiredObject(body.pilot_scope, "pilot_scope"),
-        };
+        return prebuiltImportReviewInput(body);
       },
       invoke: (currentService, input) => currentService.reviewPrebuiltBundleImport(input),
+    }),
+    assessPrebuiltBundleImportRecovery: (args) => execute(args, {
+      method: "POST",
+      authenticateAdmin,
+      getService,
+      input: async ({ request }) => {
+        const body = await jsonBody(request);
+        return {
+          ...prebuiltImportReviewInput(body),
+          source_identities: requiredArray(body.source_identities, "source_identities"),
+        };
+      },
+      invoke: (currentService, input) => currentService.assessPrebuiltBundleImportRecovery(input),
     }),
     executePrebuiltBundleImport: (args) => execute(args, {
       method: "POST",
@@ -306,6 +299,30 @@ function requiredJsonContainer(value, name) {
     throw new BundleAdminRequestError(`${name} must be an array or object`);
   }
   return value;
+}
+
+function prebuiltImportReviewInput(body) {
+  if (body.import_package !== undefined) {
+    if (typeof body.import_package !== "string" && !isPlainObject(body.import_package)) {
+      throw new BundleAdminRequestError("import_package must be a JSON string or object");
+    }
+    return { import_package: body.import_package };
+  }
+  if (body.raw_source_export !== undefined || body.source_mapping_profile !== undefined) {
+    return {
+      import_id: requiredString(body.import_id, "import_id"),
+      raw_source_export: requiredJsonContainer(body.raw_source_export, "raw_source_export"),
+      source_mapping_profile: requiredObject(body.source_mapping_profile, "source_mapping_profile"),
+      mappings: requiredArray(body.mappings, "mappings"),
+      pilot_scope: requiredObject(body.pilot_scope, "pilot_scope"),
+    };
+  }
+  return {
+    import_id: requiredString(body.import_id, "import_id"),
+    source_records: requiredArray(body.source_records, "source_records"),
+    mappings: requiredArray(body.mappings, "mappings"),
+    pilot_scope: requiredObject(body.pilot_scope, "pilot_scope"),
+  };
 }
 
 function actor(session) {

@@ -15,6 +15,7 @@
 - Development-store read-back confirmed every parent and component Variant is unique, `ACTIVE`, and exact-price matched.
 - All three parent products currently have no `onlineStoreUrl`.
 - The active offline session lacks `read_inventory`; the diagnostic safely downgraded to catalogue-only fields and recorded `inventory_readback=unavailable_scope` instead of hiding the missing evidence.
+- That offline-session statement is historical batch evidence. The current CLI surface rejects `--session-transport`; catalogue diagnostics now use Shopify CLI with `shopify.app.dev.toml` only.
 - Existing development Definitions scanned: `10`; ownership collisions: `0`.
 - Draft Definitions, Revisions, Snapshots, and Projections compiled for all three records.
 - Dry-run import review: `3 ready_for_confirmation`, `0 rejected`; package fingerprint `31407802`.

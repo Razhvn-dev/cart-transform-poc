@@ -12,7 +12,11 @@ export function assessPrebuiltBundleImportRecovery({ plan, ledger_records } = {}
       : [],
   );
 
-  const records = plan.records.map((record) => assessRecord(record, recordsBySourceIdentity.get(record.source_identity)));
+  const records = plan.records.map((record) => assessRecord(
+    plan.import_id,
+    record,
+    recordsBySourceIdentity.get(record.source_identity),
+  ));
   return deepFreeze({
     import_id: plan.import_id,
     status: records.some((record) => record.status === "retry_conflict") ? "blocked" : "ready_for_reconciliation",
@@ -21,7 +25,7 @@ export function assessPrebuiltBundleImportRecovery({ plan, ledger_records } = {}
   });
 }
 
-function assessRecord(planRecord, ledgerRecord) {
+function assessRecord(importId, planRecord, ledgerRecord) {
   const base = {
     source_identity: planRecord.source_identity,
     target_bundle_definition_id: planRecord.target?.bundle_definition_id ?? null,
@@ -31,7 +35,8 @@ function assessRecord(planRecord, ledgerRecord) {
   }
   if (!ledgerRecord) return { ...base, status: "ready_to_execute", reason: null };
 
-  const matchesPlan = ledgerRecord.source_fingerprint === planRecord.source_fingerprint
+  const matchesPlan = ledgerRecord.import_id === importId
+    && ledgerRecord.source_fingerprint === planRecord.source_fingerprint
     && ledgerRecord.target_bundle_definition_id === planRecord.target.bundle_definition_id
     && ledgerRecord.target_fingerprint === planRecord.target_fingerprint;
   if (!matchesPlan) return { ...base, status: "retry_conflict", reason: "LEDGER_CONTENT_MISMATCH" };

@@ -5,24 +5,24 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { DEV_SHOPIFY_APP_CLIENT_ID, createDevShopifyPersistenceAdapter } from "../extensions/master-kit-expand/src/config/shopify-dev-persistence.adapter.js";
+import {
+  DEV_SHOPIFY_APP_CLIENT_ID,
+  createDevShopifyPersistenceAdapter,
+} from "../extensions/master-kit-expand/src/config/shopify-dev-persistence.adapter.js";
 import { DEV_PUBLICATION_REHEARSAL_BINDINGS, DEV_PUBLICATION_REHEARSAL_TARGET } from "./dev-shopify-publication-rehearsal.js";
 import {
   assertRehearsalOperationIsolated,
   buildDevPublicationRehearsalReconciliationQuery,
-  summarizeDevPublicationRehearsalReconciliation,
 } from "./dev-shopify-publication-rehearsal.execution.js";
-import { createDevPublicationCandidateRecovery } from "./dev-shopify-publication-rehearsal.candidate-recovery.js";
+import { executeDevPublicationCandidateRecovery } from "./dev-shopify-publication-rehearsal.candidate-recovery-execution.js";
 import { parseDevPublicationRehearsalCliCommand } from "./dev-shopify-publication-rehearsal.transport.js";
 import { createShopifyCliReadSafeExecutor } from "./shopify-cli-read-safe-executor.js";
 
-const execFileAsync = promisify(execFile);
 const root = fileURLToPath(new URL("..", import.meta.url));
 const command = parseDevPublicationRehearsalCliCommand({
   argv: process.argv.slice(2),
-  operation: "candidate_seed",
+  operation: "candidate_recovery",
 });
-
 if (command.mode !== "apply") {
   process.stdout.write(`${JSON.stringify({
     status: command.mode === "help" ? "help" : "local_plan",
@@ -31,50 +31,39 @@ if (command.mode !== "apply") {
     apply_required: true,
     exact_confirmation: command.confirmation,
     mutation_retry: "prohibited",
-    approved_remote_state: "needs_candidate_seed",
+    ambiguous_result: "stop and rerun this command only after independent reconciliation",
   }, null, 2)}\n`);
 } else {
-  const cliEntrypoint = join(root, "node_modules", "@shopify", "cli", "bin", "run.js");
-  const directory = await mkdtemp(join(tmpdir(), "aces-dev-publication-candidate-seed-"));
+  const directory = await mkdtemp(join(tmpdir(), "aces-dev-publication-candidate-recovery-"));
   const executeCli = createShopifyCliReadSafeExecutor({
-    cliEntrypoint,
+    cliEntrypoint: join(root, "node_modules", "@shopify", "cli", "bin", "run.js"),
     directory,
-    execFileAsync,
+    execFileAsync: promisify(execFile),
     root,
     target: DEV_PUBLICATION_REHEARSAL_TARGET,
+    timeoutMs: 180_000,
   });
-  const execute = (query, { variables = {} } = {}) => {
-    assertRehearsalOperationIsolated(query);
-    return executeCli(query, { variables });
-  };
-
   try {
-    const before = await execute(buildDevPublicationRehearsalReconciliationQuery());
-    const recovery = createDevPublicationCandidateRecovery(toRemote(before.data));
-    if (recovery.status === "candidate_recovered" || recovery.status === "ready_to_publish") {
-      process.stdout.write(`${JSON.stringify({ status: recovery.status, summary: summarizeDevPublicationRehearsalReconciliation(before.data) }, null, 2)}\n`);
-    } else if (recovery.status === "needs_candidate_seed") {
-      const persistence = createDevShopifyPersistenceAdapter({
-        appClientId: DEV_SHOPIFY_APP_CLIENT_ID,
-        bindings: {
-          metaobjectTypes: {
-            bundleDefinition: "$app:aces_bundle_definition_dev",
-            bundleRevision: "$app:aces_bundle_revision_dev",
-            publicationRecord: "$app:aces_bundle_publication_record_dev",
-          },
-          documentFieldKey: "document",
-          metafields: DEV_PUBLICATION_REHEARSAL_BINDINGS,
+    const execute = (query, { variables = {} } = {}) => {
+      assertRehearsalOperationIsolated(query);
+      return executeCli(query, { variables });
+    };
+    const persistence = createDevShopifyPersistenceAdapter({
+      appClientId: DEV_SHOPIFY_APP_CLIENT_ID,
+      bindings: {
+        metaobjectTypes: {
+          bundleDefinition: "$app:aces_bundle_definition_dev",
+          bundleRevision: "$app:aces_bundle_revision_dev",
+          publicationRecord: "$app:aces_bundle_publication_record_dev",
         },
-        execute,
-      });
-      await persistence.writeRevision({ revision: recovery.candidate_draft });
-      const after = await execute(buildDevPublicationRehearsalReconciliationQuery());
-      const verified = createDevPublicationCandidateRecovery(toRemote(after.data));
-      if (verified.status !== "ready_to_publish") throw new Error("candidate seed read-back did not produce an isolated draft");
-      process.stdout.write(`${JSON.stringify({ status: "candidate_seeded", summary: summarizeDevPublicationRehearsalReconciliation(after.data) }, null, 2)}\n`);
-    } else {
-      throw new Error(`candidate seed cannot continue from ${recovery.status}`);
-    }
+        documentFieldKey: "document",
+        metafields: DEV_PUBLICATION_REHEARSAL_BINDINGS,
+      },
+      execute,
+    });
+    const readRemote = async () => toRemote((await execute(buildDevPublicationRehearsalReconciliationQuery())).data);
+    const result = await executeDevPublicationCandidateRecovery({ readRemote, persistence });
+    process.stdout.write(`${JSON.stringify({ ...result, target: DEV_PUBLICATION_REHEARSAL_TARGET }, null, 2)}\n`);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

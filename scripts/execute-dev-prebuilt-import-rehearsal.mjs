@@ -1,12 +1,10 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { PrismaClient } from "@prisma/client";
-
 import { createDevShopifyBundleAdminService } from "../app/domains/bundle-admin/bundle-admin.shopify-service.server.js";
 import { BundlePersistenceError } from "../extensions/master-kit-expand/src/config/bundle-persistence.adapter.js";
 import { executeConfirmedPrebuiltBundleImport } from "../extensions/master-kit-expand/src/config/prebuilt-bundle-import.execution.js";
@@ -28,10 +26,12 @@ import {
   excludedComponentProductGids,
 } from "./dev-prebuilt-import-rehearsal.js";
 import { createShopifyCliReadSafeExecutor } from "./shopify-cli-read-safe-executor.js";
-import { createShopifySessionAdminExecutor } from "./shopify-session-admin-executor.js";
 
 const execFileAsync = promisify(execFile);
 const root = fileURLToPath(new URL("..", import.meta.url));
+if (process.argv.includes("--session-transport")) {
+  throw new Error("session transport is disabled until trusted app identity is available");
+}
 const cliEntrypoint = join(process.env.APPDATA ?? "", "npm", "node_modules", "@shopify", "cli", "bin", "run.js");
 const directory = await mkdtemp(join(tmpdir(), "aces-dev-prebuilt-import-rehearsal-"));
 const executeCli = createShopifyCliReadSafeExecutor({
@@ -43,22 +43,7 @@ const executeCli = createShopifyCliReadSafeExecutor({
   readOnlyAttempts: 8,
   timeoutMs: 60_000,
 });
-let prisma = null;
-let execute = executeCli;
-if (process.argv.includes("--session-transport")) {
-  const localCredentials = parseEnvFile(await readFile(join(root, ".env.docker"), "utf8"));
-  if (localCredentials.SHOPIFY_API_KEY !== DEV_SHOPIFY_APP_CLIENT_ID) {
-    throw new Error("local credentials do not belong to cart-transform-poc-dev");
-  }
-  prisma = new PrismaClient();
-  execute = createShopifySessionAdminExecutor({
-    prisma,
-    shop: DEV_PREBUILT_IMPORT_REHEARSAL_TARGET.store,
-    apiVersion: DEV_PREBUILT_IMPORT_REHEARSAL_TARGET.apiVersion,
-    clientId: localCredentials.SHOPIFY_API_KEY,
-    clientSecret: localCredentials.SHOPIFY_API_SECRET,
-  });
-}
+const execute = executeCli;
 
 try {
   assertDevPrebuiltImportRehearsalBindings();
@@ -130,7 +115,6 @@ try {
     }, null, 2)}\n`);
   }
 } finally {
-  await prisma?.$disconnect();
   await rm(directory, { recursive: true, force: true });
 }
 
@@ -784,13 +768,4 @@ function summarizePlan(plan) {
     target_fingerprint: plan.records[0].target_fingerprint,
     ready_for_confirmation: plan.summary.ready_for_confirmation,
   };
-}
-
-function parseEnvFile(value) {
-  return Object.fromEntries(value.split(/\r?\n/).flatMap((line) => {
-    const trimmed = line.trim();
-    if (trimmed === "" || trimmed.startsWith("#") || !trimmed.includes("=")) return [];
-    const separator = trimmed.indexOf("=");
-    return [[trimmed.slice(0, separator).trim(), trimmed.slice(separator + 1).trim()]];
-  }));
 }

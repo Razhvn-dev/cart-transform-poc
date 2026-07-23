@@ -53,8 +53,35 @@ describe("development publication rehearsal candidate recovery", () => {
 
     expect(createDevPublicationCandidateRecovery(remote)).toMatchObject({
       status: "ready_to_complete_candidate",
-      steps: { write_active_pointer: true, write_domain: true, write_publication: true },
+      steps: { write_active_pointer: true },
     });
+  });
+
+  it("recognizes every one-write candidate domain intermediate state", () => {
+    const remote = baselineRemote();
+    const execution = createDevPublicationRehearsalExecution();
+    remote.candidateRevision = execution.candidateRevision;
+    remote.snapshot.document = compileRuntimeSnapshot(execution.candidateRevision.configuration);
+    remote.activeRevision.document = execution.identifiers.candidateRevisionId;
+
+    let plan = createDevPublicationCandidateRecovery(remote);
+    expect(plan.steps).toEqual({ write_baseline_revision: true });
+
+    remote.baselineRevision = structuredClone(plan.target.domain.revisions.find(
+      (revision) => revision.revision_id === execution.identifiers.baselineRevisionId,
+    ));
+    plan = createDevPublicationCandidateRecovery(remote);
+    expect(plan.steps).toEqual({ write_candidate_revision: true });
+
+    remote.candidateRevision = structuredClone(plan.target.domain.revisions.find(
+      (revision) => revision.revision_id === execution.identifiers.candidateRevisionId,
+    ));
+    plan = createDevPublicationCandidateRecovery(remote);
+    expect(plan.steps).toEqual({ write_definition: true });
+
+    remote.definition = structuredClone(plan.target.domain.definition);
+    plan = createDevPublicationCandidateRecovery(remote);
+    expect(plan.steps).toEqual({ write_publication: true });
   });
 
   it("rejects a pointer that was not created by the isolated stage", () => {
@@ -63,5 +90,16 @@ describe("development publication rehearsal candidate recovery", () => {
 
     expect(() => createDevPublicationCandidateRecovery(remote))
       .toThrow(DevPublicationCandidateRecoveryError);
+  });
+
+  it.each([
+    ["missing", (remote) => { remote.baselinePublication = null; }],
+    ["tampered", (remote) => { remote.baselinePublication.result.warnings = ["tampered"]; }],
+  ])("requires the complete exact baseline PublicationRecord when it is %s", (_label, change) => {
+    const remote = baselineRemote();
+    change(remote);
+
+    expect(() => createDevPublicationCandidateRecovery(remote))
+      .toThrow(/recover:shopify-publication-rehearsal:dev/);
   });
 });

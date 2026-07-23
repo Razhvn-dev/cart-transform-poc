@@ -8,6 +8,9 @@ import { createPrebuiltBundleImportPlan } from "../../../extensions/master-kit-e
 import { createPrebuiltBundleImportPlanFromPackage, parsePrebuiltBundleImportPackage } from "../../../extensions/master-kit-expand/src/config/prebuilt-bundle-import.package.js";
 import { createDeclarativePrebuiltBundleSourceAdapter } from "../../../extensions/master-kit-expand/src/config/prebuilt-bundle-import.declarative-source.js";
 import { createPrebuiltBundleImportPackageFromSource } from "../../../extensions/master-kit-expand/src/config/prebuilt-bundle-import.source-package.js";
+import { assessPrebuiltBundleImportRecovery as assessImportRecovery } from "../../../extensions/master-kit-expand/src/config/prebuilt-bundle-import.recovery.js";
+
+export const PREBUILT_IMPORT_RECOVERY_ASSESSMENT_LIMIT = 25;
 
 export const BUNDLE_ADMIN_ERROR_CODES = Object.freeze([
   "NOT_FOUND",
@@ -38,6 +41,7 @@ export function createBundleAdminService({
   prebuiltImportExecutionEnabled = false,
   prebuiltImportExecutor = null,
   prebuiltImportLedger = null,
+  prebuiltImportLedgerReader = null,
   createPrebuiltImportTargetWriter = null,
   resolvePromotionEvidence = null,
   compile = compileRuntimeSnapshot,
@@ -348,6 +352,48 @@ export function createBundleAdminService({
       }
     },
 
+    async assessPrebuiltBundleImportRecovery({ source_identities: sourceIdentities, ...reviewInput }) {
+      const selectedIdentities = validateRecoverySourceIdentities(sourceIdentities);
+      if (typeof prebuiltImportLedgerReader?.read !== "function") {
+        throw new BundleAdminApplicationError(
+          "UNSUPPORTED_CAPABILITY",
+          "pre-built import recovery assessment requires a read-only ledger",
+        );
+      }
+
+      const plan = await this.reviewPrebuiltBundleImport(reviewInput);
+      const recordsByIdentity = new Map(plan.records.map((record) => [record.source_identity, record]));
+      const selectedRecords = selectedIdentities.map((sourceIdentity) => {
+        const record = recordsByIdentity.get(sourceIdentity);
+        if (!record) {
+          throw new BundleAdminApplicationError(
+            "VALIDATION_FAILED",
+            `source identity ${sourceIdentity} is not present in the server-reviewed plan`,
+          );
+        }
+        return record;
+      });
+
+      try {
+        const readableRecords = selectedRecords
+          .filter((candidate) => candidate.status === "ready_for_confirmation");
+        const readableIdentities = readableRecords.map((record) => record.source_identity);
+        const ledgerResults = typeof prebuiltImportLedgerReader.readMany === "function"
+          ? await prebuiltImportLedgerReader.readMany(readableIdentities)
+          : await Promise.all(readableIdentities.map(
+            (sourceIdentity) => prebuiltImportLedgerReader.read(sourceIdentity),
+          ));
+        assertLedgerReadResults(readableIdentities, ledgerResults);
+        const ledgerRecords = ledgerResults.filter((record) => record != null);
+        return assessImportRecovery({
+          plan: { ...plan, records: selectedRecords },
+          ledger_records: ledgerRecords,
+        });
+      } catch (error) {
+        throw normalizeApplicationError(error, "PERSISTENCE_FAILED");
+      }
+    },
+
     async executePrebuiltBundleImport({
       import_id: importId,
       source_records: sourceRecords,
@@ -564,6 +610,54 @@ export function createBundleAdminService({
       }, publicationDriver);
     },
   };
+}
+
+function validateRecoverySourceIdentities(sourceIdentities) {
+  if (!Array.isArray(sourceIdentities) || sourceIdentities.length === 0) {
+    throw new BundleAdminApplicationError("VALIDATION_FAILED", "source_identities must contain at least one source identity");
+  }
+  if (sourceIdentities.length > PREBUILT_IMPORT_RECOVERY_ASSESSMENT_LIMIT) {
+    throw new BundleAdminApplicationError(
+      "VALIDATION_FAILED",
+      `source_identities cannot contain more than ${PREBUILT_IMPORT_RECOVERY_ASSESSMENT_LIMIT} entries`,
+    );
+  }
+  const seen = new Set();
+  for (const sourceIdentity of sourceIdentities) {
+    if (typeof sourceIdentity !== "string"
+      || sourceIdentity.trim() === ""
+      || sourceIdentity.trim() !== sourceIdentity) {
+      throw new BundleAdminApplicationError(
+        "VALIDATION_FAILED",
+        "source_identities must contain only trimmed non-empty strings",
+      );
+    }
+    if (seen.has(sourceIdentity)) {
+      throw new BundleAdminApplicationError(
+        "VALIDATION_FAILED",
+        "source_identities must not contain duplicates",
+      );
+    }
+    seen.add(sourceIdentity);
+  }
+  return sourceIdentities;
+}
+
+function assertLedgerReadResults(sourceIdentities, ledgerResults) {
+  if (!Array.isArray(ledgerResults) || ledgerResults.length !== sourceIdentities.length) {
+    throw new BundlePersistenceError(
+      "READ_BACK_FAILED",
+      "pre-built import ledger read did not return one result per source identity",
+    );
+  }
+  ledgerResults.forEach((record, index) => {
+    if (record !== null && record !== undefined && record.source_identity !== sourceIdentities[index]) {
+      throw new BundlePersistenceError(
+        "READ_BACK_FAILED",
+        "pre-built import ledger read returned a mismatched source identity",
+      );
+    }
+  });
 }
 
 async function assertExistingImportTargetsAreCompleted({ plan, ledger }) {

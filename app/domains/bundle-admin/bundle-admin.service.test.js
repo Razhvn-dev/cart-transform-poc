@@ -65,6 +65,7 @@ function service({
   prebuiltImportExecutionEnabled = false,
   prebuiltImportExecutor = null,
   prebuiltImportLedger = null,
+  prebuiltImportLedgerReader = null,
   createPrebuiltImportTargetWriter = null,
 } = {}) {
   const persistence = createInMemoryBundlePersistenceAdapter({ definitions, revisions, publications });
@@ -79,6 +80,7 @@ function service({
       prebuiltImportExecutionEnabled,
       prebuiltImportExecutor,
       prebuiltImportLedger,
+      prebuiltImportLedgerReader,
       createPrebuiltImportTargetWriter,
       now: () => "2026-07-15T01:00:00Z",
       idFactory: (() => {
@@ -87,6 +89,30 @@ function service({
       })(),
     }),
   };
+}
+
+function importFixtureWithRecordCount(count) {
+  const fixture = importFixture();
+  fixture.source_records = Array.from({ length: count }, (_, index) => {
+    const source = structuredClone(fixture.source_records[0]);
+    source.source_bundle_id = `legacy-master-kit-${index + 1}`;
+    source.source_checksum = `legacy-checksum-${index + 1}`;
+    source.parent_binding.product_gid = `gid://shopify/Product/${10600519598358 + index}`;
+    source.parent_binding.variant_gid = `gid://shopify/ProductVariant/${51505325605142 + index}`;
+    return source;
+  });
+  fixture.mappings = fixture.source_records.map((source, index) => {
+    const mapping = structuredClone(importFixture().mappings[0]);
+    mapping.source_identity = `${source.source_system}:${source.source_bundle_id}`;
+    mapping.target.bundle_definition_id = `f6cf6c74-90a6-4f15-9e4f-${String(index + 1).padStart(12, "0")}`;
+    mapping.target.parent_binding = structuredClone(source.parent_binding);
+    mapping.configuration.configuration_id = mapping.target.bundle_definition_id;
+    mapping.configuration.parent = structuredClone(source.parent_binding);
+    return mapping;
+  });
+  fixture.pilot_scope.approved_parent_variant_gids = fixture.source_records
+    .map((source) => source.parent_binding.variant_gid);
+  return fixture;
 }
 
 describe("bundle admin application service", () => {
@@ -183,6 +209,223 @@ describe("bundle admin application service", () => {
       mappings: [],
       pilot_scope: {},
     })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+  });
+
+  it("assesses a freshly server-reviewed import through ledger reads only", async () => {
+    const packageValue = importFixture();
+    const ledgerReader = { read: vi.fn(async () => null) };
+    const ledgerWriter = vi.fn();
+    const createTargetWriter = vi.fn();
+    const { persistence, app } = service({
+      prebuiltImportLedgerReader: ledgerReader,
+      prebuiltImportLedger: { read: ledgerReader.read, write: ledgerWriter },
+      createPrebuiltImportTargetWriter: createTargetWriter,
+    });
+
+    const result = await app.assessPrebuiltBundleImportRecovery({
+      import_package: packageValue,
+      source_identities: ["legacy_paid_app:legacy-master-kit-1"],
+    });
+
+    expect(result).toMatchObject({
+      status: "ready_for_reconciliation",
+      summary: { ready_to_execute: 1, already_completed: 0 },
+      records: [{
+        source_identity: "legacy_paid_app:legacy-master-kit-1",
+        status: "ready_to_execute",
+      }],
+    });
+    expect(ledgerReader.read).toHaveBeenCalledTimes(1);
+    expect(ledgerWriter).not.toHaveBeenCalled();
+    expect(createTargetWriter).not.toHaveBeenCalled();
+    expect(persistence.state.calls).not.toContain("writeBundleDefinition");
+    expect(persistence.state.calls).not.toContain("writeRevision");
+    expect(persistence.state.calls).not.toContain("writeRuntimeSnapshot");
+  });
+
+  it("re-reviews changed package content before reporting a ledger mismatch", async () => {
+    const packageValue = importFixture();
+    const originalPlan = await service().app.reviewPrebuiltBundleImport({ import_package: packageValue });
+    const originalRecord = originalPlan.records[0];
+    const ledgerReader = { read: vi.fn(async () => ({
+      schema_version: "prebuilt_bundle_import_ledger.v1",
+      import_id: originalPlan.import_id,
+      source_identity: originalRecord.source_identity,
+      source_fingerprint: originalRecord.source_fingerprint,
+      target_bundle_definition_id: originalRecord.target.bundle_definition_id,
+      target_fingerprint: originalRecord.target_fingerprint,
+      state: "completed",
+    })) };
+    const { app } = service({ prebuiltImportLedgerReader: ledgerReader });
+    const changedPackage = structuredClone(packageValue);
+    changedPackage.source_records[0].source_checksum = "changed-after-first-review";
+
+    const result = await app.assessPrebuiltBundleImportRecovery({
+      import_package: changedPackage,
+      source_identities: [originalRecord.source_identity],
+    });
+
+    expect(result).toMatchObject({
+      status: "blocked",
+      summary: { retry_conflict: 1 },
+      records: [{ status: "retry_conflict", reason: "LEDGER_CONTENT_MISMATCH" }],
+    });
+  });
+
+  it("reports matching completed and uncertain ledger states without writes", async () => {
+    const packageValue = importFixture();
+    const plan = await service().app.reviewPrebuiltBundleImport({ import_package: packageValue });
+    const record = plan.records[0];
+    const baseLedger = {
+      schema_version: "prebuilt_bundle_import_ledger.v1",
+      import_id: plan.import_id,
+      source_identity: record.source_identity,
+      source_fingerprint: record.source_fingerprint,
+      target_bundle_definition_id: record.target.bundle_definition_id,
+      target_fingerprint: record.target_fingerprint,
+    };
+
+    for (const [state, expectedStatus] of [
+      ["completed", "already_completed"],
+      ["pending", "requires_target_reconciliation"],
+      ["failed", "requires_target_reconciliation"],
+    ]) {
+      const ledgerReader = { read: vi.fn(async () => ({ ...baseLedger, state })) };
+      const { app } = service({ prebuiltImportLedgerReader: ledgerReader });
+      const result = await app.assessPrebuiltBundleImportRecovery({
+        import_package: packageValue,
+        source_identities: [record.source_identity],
+      });
+      expect(result.records[0].status).toBe(expectedStatus);
+    }
+  });
+
+  it("rejects invalid, untrimmed, and duplicate recovery identities before review or ledger reads", async () => {
+    for (const sourceIdentities of [
+      [""],
+      ["   "],
+      [null],
+      [" legacy_paid_app:legacy-master-kit-1"],
+      ["legacy_paid_app:legacy-master-kit-1 "],
+      ["legacy_paid_app:legacy-master-kit-1", "legacy_paid_app:legacy-master-kit-1"],
+    ]) {
+      const ledgerReader = { read: vi.fn(), readMany: vi.fn() };
+      const { app } = service({ prebuiltImportLedgerReader: ledgerReader });
+      await expect(app.assessPrebuiltBundleImportRecovery({
+        import_package: importFixture(),
+        source_identities: sourceIdentities,
+      })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+      expect(ledgerReader.read).not.toHaveBeenCalled();
+      expect(ledgerReader.readMany).not.toHaveBeenCalled();
+    }
+  });
+
+  it("accepts exactly 25 unique identities and uses one bounded ledger batch with zero writes", async () => {
+    const packageValue = importFixtureWithRecordCount(25);
+    const sourceIdentities = packageValue.mappings.map((mapping) => mapping.source_identity);
+    const ledgerReader = {
+      read: vi.fn(),
+      readMany: vi.fn(async (identities) => identities.map(() => null)),
+    };
+    const ledgerWrite = vi.fn();
+    const targetWriter = vi.fn();
+    const { persistence, app } = service({
+      prebuiltImportLedgerReader: ledgerReader,
+      prebuiltImportLedger: { read: ledgerReader.read, write: ledgerWrite },
+      createPrebuiltImportTargetWriter: targetWriter,
+    });
+
+    const result = await app.assessPrebuiltBundleImportRecovery({
+      import_package: packageValue,
+      source_identities: sourceIdentities,
+    });
+
+    expect(result.summary.ready_to_execute).toBe(25);
+    expect(ledgerReader.readMany).toHaveBeenCalledOnce();
+    expect(ledgerReader.readMany).toHaveBeenCalledWith(sourceIdentities);
+    expect(ledgerReader.read).not.toHaveBeenCalled();
+    expect(ledgerWrite).not.toHaveBeenCalled();
+    expect(targetWriter).not.toHaveBeenCalled();
+    expect(persistence.state.calls.filter((call) => call.startsWith("write"))).toEqual([]);
+  });
+
+  it("fails the whole assessment on a ledger batch read error without attempting writes", async () => {
+    const readError = Object.assign(new Error("ledger batch unavailable"), { code: "READ_BACK_FAILED" });
+    const ledgerReader = { read: vi.fn(), readMany: vi.fn().mockRejectedValue(readError) };
+    const ledgerWrite = vi.fn();
+    const targetWriter = vi.fn();
+    const { persistence, app } = service({
+      prebuiltImportLedgerReader: ledgerReader,
+      prebuiltImportLedger: { read: ledgerReader.read, write: ledgerWrite },
+      createPrebuiltImportTargetWriter: targetWriter,
+    });
+
+    await expect(app.assessPrebuiltBundleImportRecovery({
+      import_package: importFixture(),
+      source_identities: ["legacy_paid_app:legacy-master-kit-1"],
+    })).rejects.toMatchObject({ code: "PERSISTENCE_FAILED", message: "ledger batch unavailable" });
+    expect(ledgerReader.readMany).toHaveBeenCalledTimes(1);
+    expect(ledgerWrite).not.toHaveBeenCalled();
+    expect(targetWriter).not.toHaveBeenCalled();
+    expect(persistence.state.calls.filter((call) => call.startsWith("write"))).toEqual([]);
+  });
+
+  it("runs fallback single reads concurrently and rejects any mid-batch error without writes", async () => {
+    const packageValue = importFixtureWithRecordCount(3);
+    const sourceIdentities = packageValue.mappings.map((mapping) => mapping.source_identity);
+    let active = 0;
+    let maxActive = 0;
+    const ledgerReader = {
+      read: vi.fn(async (sourceIdentity) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active -= 1;
+        if (sourceIdentity === sourceIdentities[1]) {
+          throw Object.assign(new Error("single ledger unavailable"), { code: "READ_BACK_FAILED" });
+        }
+        return null;
+      }),
+    };
+    const ledgerWrite = vi.fn();
+    const targetWriter = vi.fn();
+    const { app } = service({
+      prebuiltImportLedgerReader: ledgerReader,
+      prebuiltImportLedger: { read: ledgerReader.read, write: ledgerWrite },
+      createPrebuiltImportTargetWriter: targetWriter,
+    });
+
+    await expect(app.assessPrebuiltBundleImportRecovery({
+      import_package: packageValue,
+      source_identities: sourceIdentities,
+    })).rejects.toMatchObject({ code: "PERSISTENCE_FAILED", message: "single ledger unavailable" });
+    expect(ledgerReader.read).toHaveBeenCalledTimes(3);
+    expect(maxActive).toBeGreaterThan(1);
+    expect(maxActive).toBeLessThanOrEqual(3);
+    expect(ledgerWrite).not.toHaveBeenCalled();
+    expect(targetWriter).not.toHaveBeenCalled();
+  });
+
+  it("rejects more than 25 recovery identities before reading the ledger", async () => {
+    const ledgerReader = { read: vi.fn() };
+    const { app } = service({ prebuiltImportLedgerReader: ledgerReader });
+
+    await expect(app.assessPrebuiltBundleImportRecovery({
+      import_package: importFixture(),
+      source_identities: Array.from({ length: 26 }, (_, index) => `source-${index}`),
+    })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(ledgerReader.read).not.toHaveBeenCalled();
+  });
+
+  it("rejects recovery identities that are absent from the server-reviewed plan", async () => {
+    const ledgerReader = { read: vi.fn() };
+    const { app } = service({ prebuiltImportLedgerReader: ledgerReader });
+
+    await expect(app.assessPrebuiltBundleImportRecovery({
+      import_package: importFixture(),
+      source_identities: ["unreviewed:source"],
+    })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(ledgerReader.read).not.toHaveBeenCalled();
   });
 
   it("keeps pre-built import execution disabled unless every server-side dependency is supplied", async () => {

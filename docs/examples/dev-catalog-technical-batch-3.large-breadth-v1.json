@@ -1,0 +1,18 @@
+{
+  "schema_version": "dev_catalog_technical_batch_scope.v1",
+  "batch_id": "large-component-breadth-acceptance-v1",
+  "purpose": "Development-only representative acceptance for quantity-one bundles with eight, ten, and twelve distinct components.",
+  "draft_created_at": "2026-07-22T07:23:57.701Z",
+  "draft_created_by": "codex-dev-catalog-technical-batch-3",
+  "existing_parent_skus": [],
+  "dev_product_series_assignments": {
+    "AS2014B-BT": "dev-large-component-breadth-bundle-acceptance",
+    "AS2014B2-FK-4005P": "dev-large-component-breadth-bundle-acceptance",
+    "AS2014B2-MK-2011-4005P": "dev-large-component-breadth-bundle-acceptance"
+  },
+  "parent_skus": [
+    "AS2014B-BT",
+    "AS2014B2-FK-4005P",
+    "AS2014B2-MK-2011-4005P"
+  ]
+}

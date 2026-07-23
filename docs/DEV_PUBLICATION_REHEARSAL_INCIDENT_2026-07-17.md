@@ -103,3 +103,89 @@ This change does not make a Shopify write, does not alter the rehearsal state,
 and does not change the primary development Snapshot/pointer or Function
 authority. It only limits the impact of a transient Shopify CLI connection
 failure on future approved isolated stages.
+
+## 2026-07-22 Candidate Recovery Status
+
+The candidate draft was seeded and read back. Repeated Shopify CLI transport
+failures then demonstrated that the former all-in-one rehearsal remains unsuitable:
+each uncertain publication attempt compensated back to the recovered baseline.
+A new monotonic candidate recovery executor was added with focused tests. It can
+start from `ready_to_publish`, write the isolated candidate Snapshot once, and then
+resume pointer, domain, and audit steps from fresh reconciliation evidence. It never
+rewrites a Snapshot after the state machine observes the candidate checksum.
+
+Using that staged executor reached the following latest read-only confirmed state:
+
+| Resource | Latest confirmed state |
+| --- | --- |
+| Definition | active revision is candidate `...0002` |
+| Baseline Revision | `superseded` |
+| Candidate Revision | exists and is the active published candidate domain revision |
+| Candidate PublicationRecord | absent; exact audit create remains pending |
+| Rollback PublicationRecord | absent |
+| Isolated Snapshot | candidate checksum `735c4162`, compareDigest `f3054f6f1a0dec79b2f412122927ef48d3cbe3931e7fc1eeac736544d2fce8dc` |
+| Isolated active pointer | candidate revision `...0002`, compareDigest `7d12ed56147a1c412e691e9e9996fa039d451f780fc41717e4bc1efe7618a622` |
+
+The missing candidate audit was retried only after read-only absence evidence, but
+the CLI mutation transport repeatedly returned an unknown remote outcome and the
+audit remained absent. The local offline session expired on 2026-07-17; a direct
+identity query returned HTTP 401, and the only local app secret belongs to the
+production app, so it was correctly rejected for development session refresh.
+Candidate audit completion and rollback must use the identity-bound Shopify CLI
+through `shopify.app.dev.toml`, with reconciliation before each single mutation.
+Persisted session transport is disabled for both reads and writes until trusted
+app identity can be proven before token access. No primary dev carrier, current
+catalogue batch, Function deployment, production store, or Custom Distribution
+App resource was modified by this rehearsal.
+
+## 2026-07-22 Final Rehearsal Completion
+
+A fresh embedded `cart-transform-poc-dev` session was established locally and
+the development offline session was refreshed. The recovery commands were wired
+to the locked development Client ID and the Prisma session transport; the
+production/Custom Distribution App credentials were not reused.
+
+This records the historical 2026-07-22 mechanism only. The current baseline
+disables persisted session transport for reads and writes; current rehearsal
+diagnostics and mutations use Shopify CLI with `shopify.app.dev.toml`.
+
+The missing candidate PublicationRecord was written only after a fresh
+reconciliation confirmed that the candidate Snapshot, active pointer, and domain
+were already complete. A later all-in-one rollback attempt exceeded its external
+command timeout and briefly exposed an intermediate carrier state, but its
+compensation completed after the timeout and returned the rehearsal to the fully
+consistent candidate state. No blind retry was performed.
+
+A monotonic rollback state machine then completed the isolated rollback through
+separate, read-back-verified invocations:
+
+1. candidate Snapshot `735c4162` to baseline Snapshot `23143031`;
+2. candidate pointer `...0002` to baseline pointer `...0001`;
+3. Definition and both Revision documents to the rollback domain;
+4. the rollback PublicationRecord.
+
+The final read-only reconciliation confirmed:
+
+| Resource | Final confirmed state |
+| --- | --- |
+| Definition | active revision is baseline `...0001` |
+| Baseline Revision | `published` |
+| Candidate Revision | `superseded` |
+| Baseline PublicationRecord | exists |
+| Candidate PublicationRecord | exists |
+| Rollback PublicationRecord | exists |
+| Isolated Snapshot | baseline checksum `23143031`, compareDigest `c3e2baad41a37563ac4a9968600fa1998f941e4e66b597d6ef401b9c6c7e13be` |
+| Isolated active pointer | baseline `...0001`, compareDigest `607f08ec5e636eed01d9370eaf09f0e94fc0dc30f810eefec803f3dfe37e74b5` |
+
+An equal-value write with a stale digest was observed as an idempotent no-op and
+was therefore not accepted as stale-CAS evidence. A disposable isolated product
+metafield probe then performed create, correct CAS update, stale update, read-back,
+and cleanup. Shopify rejected the stale update with `STALE_OBJECT`; the accepted
+value and digest were unchanged, and the probe metafield was deleted and confirmed
+absent. This matches Shopify's documented compare-and-set contract.
+
+The isolated publication rehearsal is now complete for candidate publication,
+idempotent reuse, audit durability, rollback, and stale-CAS rejection. Primary
+development carriers, catalog-batch resources, inventory, theme, Function
+deployment, production store, production runtime authority, and the Custom
+Distribution App were not modified by this completion.

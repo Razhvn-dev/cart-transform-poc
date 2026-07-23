@@ -7,7 +7,10 @@ import {
 import { createBundlePublicationPersistenceDriver } from "../../../extensions/master-kit-expand/src/config/bundle-publication.persistence-driver.js";
 import { publishDraftRevision, rollbackPublishedRevision } from "../../../extensions/master-kit-expand/src/config/bundle-publication.service.js";
 import { executeConfirmedPrebuiltBundleImport } from "../../../extensions/master-kit-expand/src/config/prebuilt-bundle-import.execution.js";
-import { createShopifyPrebuiltBundleImportLedger } from "../../../extensions/master-kit-expand/src/config/prebuilt-bundle-import.shopify-ledger.js";
+import {
+  createShopifyPrebuiltBundleImportLedger,
+  createShopifyPrebuiltBundleImportLedgerReader,
+} from "../../../extensions/master-kit-expand/src/config/prebuilt-bundle-import.shopify-ledger.js";
 import { createPrebuiltBundleImportTargetWriter } from "../../../extensions/master-kit-expand/src/config/prebuilt-bundle-import.target-persistence.js";
 import { createFilePublicationPromotionEvidenceProvider } from "./bundle-admin.promotion-evidence.server.js";
 import { createBundleAdminService } from "./bundle-admin.service.js";
@@ -53,6 +56,7 @@ export function createDevShopifyBundleAdminService({
     prebuiltImportExecutionEnabled: prebuiltImport.enabled,
     prebuiltImportExecutor: prebuiltImport.executor,
     prebuiltImportLedger: prebuiltImport.ledger,
+    prebuiltImportLedgerReader: prebuiltImport.ledgerReader,
     createPrebuiltImportTargetWriter: prebuiltImport.createTargetWriter,
     resolvePromotionEvidence: publication.resolvePromotionEvidence,
     idFactory: randomUUID,
@@ -79,14 +83,16 @@ function createPublicationComposition({ persistence, publicationEnabled, publica
 }
 
 export function createPrebuiltImportComposition({ persistence, enabled }) {
+  const ledgerReader = createShopifyPrebuiltBundleImportLedgerReader({ persistence });
   if (!enabled) {
-    return { enabled: false, executor: null, ledger: null, createTargetWriter: null };
+    return { enabled: false, executor: null, ledger: null, ledgerReader, createTargetWriter: null };
   }
   const ledger = createShopifyPrebuiltBundleImportLedger({ persistence });
   return {
     enabled: true,
     executor: executeConfirmedPrebuiltBundleImport,
     ledger,
+    ledgerReader,
     createTargetWriter: ({ pilot_scope: pilotScope }) => createPrebuiltBundleImportTargetWriter({
       persistence,
       pilot_scope: pilotScope,

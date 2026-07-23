@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { BundlePersistenceError } from "./bundle-persistence.adapter.js";
 import {
   DEV_SHOPIFY_APP_CLIENT_ID,
@@ -458,6 +458,50 @@ describe("development Shopify persistence adapter", () => {
     });
     expect(writes[0].key).toMatch(/^prebuilt_import_ledger_v1_[0-9a-f]{32}$/);
     expect(writes[1].compareDigest).toBe("digest-1");
+  });
+
+  it("reads up to 25 import ledgers in one read-only Shop metafield query", async () => {
+    const first = ledgerRecord();
+    const second = {
+      ...first,
+      import_id: "77770000-0000-4000-8000-000000000002",
+      source_identity: "shopify://source-store/products/3/variants/4",
+    };
+    const calls = [];
+    const execute = async (query, { variables }) => {
+      calls.push({ query, variables });
+      if (!query.includes("BundlePersistenceShopImportLedgers")) {
+        throw new Error("unexpected Shopify operation");
+      }
+      const [firstKey, secondKey] = variables.keys;
+      return { data: { shop: {
+        id: "gid://shopify/Shop/1",
+        metafields: {
+          nodes: [
+            { key: firstKey.split(".").at(-1), type: "json", value: JSON.stringify(first), jsonValue: first },
+            { key: secondKey.split(".").at(-1), type: "json", value: JSON.stringify(second), jsonValue: second },
+          ],
+        },
+      } } };
+    };
+    const adapter = createDevShopifyPersistenceAdapter({ execute, appClientId: DEV_SHOPIFY_APP_CLIENT_ID });
+
+    await expect(adapter.readPrebuiltImportLedgers([first.source_identity, second.source_identity]))
+      .resolves.toEqual([first, second]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].variables).toMatchObject({ first: 2 });
+    expect(calls[0].variables.keys).toHaveLength(2);
+    expect(calls[0].query).not.toContain("mutation ");
+  });
+
+  it("rejects oversized import ledger batches before Shopify is called", async () => {
+    const execute = vi.fn();
+    const adapter = createDevShopifyPersistenceAdapter({ execute, appClientId: DEV_SHOPIFY_APP_CLIENT_ID });
+
+    await expect(adapter.readPrebuiltImportLedgers(
+      Array.from({ length: 26 }, (_, index) => `source-${index}`),
+    )).rejects.toMatchObject({ code: "READ_BACK_FAILED" });
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("rejects ledger target drift and maps concurrent CAS loss to a checksum conflict", async () => {

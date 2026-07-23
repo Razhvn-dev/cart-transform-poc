@@ -236,6 +236,26 @@ export function createDevShopifyPersistenceAdapter({ execute, appClientId, bindi
       }
       return current.document;
     },
+    async readPrebuiltImportLedgers(sourceIdentities) {
+      assertSourceIdentityBatch(sourceIdentities);
+      if (sourceIdentities.length === 0) return [];
+      const keys = sourceIdentities.map((sourceIdentity) => prebuiltImportLedgerKey(sourceIdentity, bindings));
+      const keyToIdentity = new Map(keys.map((key, index) => [key, sourceIdentities[index]]));
+      if (keyToIdentity.size !== keys.length) {
+        throw new BundlePersistenceError("READ_BACK_FAILED", "pre-built import ledger keys are not unique");
+      }
+      const documentsByKey = await readShopMetafields(graphql, keys, bindings);
+      return keys.map((key) => {
+        const document = documentsByKey.get(key) ?? null;
+        if (document !== null && document.source_identity !== keyToIdentity.get(key)) {
+          throw new BundlePersistenceError(
+            "RETRY_CONFLICT",
+            "pre-built import ledger key belongs to a different source identity",
+          );
+        }
+        return document;
+      });
+    },
     async writePrebuiltImportLedger(record) {
       assertPrebuiltImportLedgerRecord(record);
       const key = prebuiltImportLedgerKey(record.source_identity, bindings);
@@ -318,6 +338,16 @@ function assertSourceIdentity(sourceIdentity) {
   if (typeof sourceIdentity !== "string" || sourceIdentity.trim() === "") {
     throw new BundlePersistenceError("WRITE_FAILED", "source_identity must be a non-empty string");
   }
+}
+
+function assertSourceIdentityBatch(sourceIdentities) {
+  if (!Array.isArray(sourceIdentities) || sourceIdentities.length > 25) {
+    throw new BundlePersistenceError(
+      "READ_BACK_FAILED",
+      "pre-built import ledger batch must contain at most 25 source identities",
+    );
+  }
+  sourceIdentities.forEach(assertSourceIdentity);
 }
 
 function assertPrebuiltImportLedgerRecord(record) {
@@ -525,6 +555,26 @@ async function readShopMetafield(graphql, key, bindings) {
   };
 }
 
+async function readShopMetafields(graphql, keys, bindings) {
+  const namespacedKeys = keys.map((key) => `${bindings.metafields.namespace}.${key}`);
+  const data = await graphql(SHOP_IMPORT_LEDGERS_QUERY, {
+    first: keys.length,
+    keys: namespacedKeys,
+  });
+  if (typeof data.shop?.id !== "string" || data.shop.id === "") {
+    throw new BundlePersistenceError("READ_BACK_FAILED", "Shopify Admin GraphQL returned no Shop owner ID");
+  }
+  const expectedKeys = new Set(keys);
+  const documents = new Map();
+  for (const metafield of data.shop.metafields?.nodes ?? []) {
+    if (!expectedKeys.has(metafield.key) || documents.has(metafield.key)) {
+      throw new BundlePersistenceError("READ_BACK_FAILED", "Shopify returned an unexpected import ledger metafield");
+    }
+    documents.set(metafield.key, parseMetafieldDocument(metafield, metafield.key));
+  }
+  return documents;
+}
+
 async function setProductMetafield(graphql, metafield, bindings) {
   const data = await graphql(METAFIELDS_SET_MUTATION, {
     metafields: [{ ...metafield, namespace: bindings.metafields.namespace }],
@@ -632,6 +682,21 @@ const SHOP_METAFIELD_QUERY = `#graphql
         value
         jsonValue
         compareDigest
+      }
+    }
+  }`;
+
+const SHOP_IMPORT_LEDGERS_QUERY = `#graphql
+  query BundlePersistenceShopImportLedgers($first: Int!, $keys: [String!]!) {
+    shop {
+      id
+      metafields(first: $first, keys: $keys) {
+        nodes {
+          key
+          type
+          value
+          jsonValue
+        }
       }
     }
   }`;

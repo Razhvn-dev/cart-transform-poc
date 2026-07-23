@@ -57,9 +57,9 @@ describe("pre-built hosted RunInput diagnostic summary", () => {
         cart_line_id: "gid://shopify/CartLine/prebuilt",
         component_count: 3,
         component_variant_gids: [
-          "gid://shopify/ProductVariant/51552319766806",
+          "gid://shopify/ProductVariant/51592538587414",
           "gid://shopify/ProductVariant/51505348346134",
-          "gid://shopify/ProductVariant/51552321011990",
+          "gid://shopify/ProductVariant/51592730706198",
         ],
         allocated_total: "750.48",
       }],

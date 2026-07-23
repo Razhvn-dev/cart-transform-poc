@@ -5,6 +5,7 @@ import {
   transitionPublicationAttempt,
 } from "../extensions/master-kit-expand/src/config/bundle-domain.lifecycle.js";
 import { DEV_PUBLICATION_REHEARSAL_AT, createDevPublicationRehearsalExecution } from "./dev-shopify-publication-rehearsal.execution.js";
+import { createExpectedDevPublicationBaselineRecovery } from "./dev-shopify-publication-rehearsal.recovery.js";
 
 export class DevPublicationCandidateRecoveryError extends Error {
   constructor(message) {
@@ -16,7 +17,7 @@ export class DevPublicationCandidateRecoveryError extends Error {
 // Maps the only permitted remote states for the isolated candidate stage.
 // It intentionally refuses to infer a compensation action from an unknown
 // carrier or domain state.
-export function createDevPublicationCandidateRecovery(remote, runId) {
+export function createExpectedDevPublicationCandidateRecovery(runId) {
   const execution = createDevPublicationRehearsalExecution(runId);
   const baselineSnapshot = compileRuntimeSnapshot(execution.baselineRevision.configuration);
   const candidateSnapshot = compileRuntimeSnapshot(execution.candidateRevision.configuration);
@@ -43,8 +44,31 @@ export function createDevPublicationCandidateRecovery(remote, runId) {
     snapshotRef: candidateRef,
     domain: candidateDomain,
   });
+  return {
+    execution,
+    baselineSnapshot,
+    candidateSnapshot,
+    baselineDomain,
+    candidateDomain,
+    targetPublication,
+    candidateRef,
+  };
+}
 
+export function createDevPublicationCandidateRecovery(remote, runId) {
+  const expected = createExpectedDevPublicationCandidateRecovery(runId);
+  const {
+    execution,
+    baselineSnapshot,
+    candidateSnapshot,
+    baselineDomain,
+    candidateDomain,
+    targetPublication,
+    candidateRef,
+  } = expected;
+  const expectedBaseline = createExpectedDevPublicationBaselineRecovery(runId);
   assertIdentity(remote, execution.identifiers);
+  assertExactBaselinePublication(remote.baselinePublication, expectedBaseline.target.publication);
   assertCarrier(remote.snapshot, baselineSnapshot, candidateSnapshot, "Snapshot");
   assertPointer(remote.activeRevision, execution.identifiers);
   assertAbsent(remote.rollbackPublication, "rollback publication");
@@ -59,28 +83,70 @@ export function createDevPublicationCandidateRecovery(remote, runId) {
   const candidateState = classify(remote.candidateRevision, execution.candidateRevision, candidateDomain.revisions.find(
     (revision) => revision.revision_id === execution.identifiers.candidateRevisionId,
   ), "candidate revision");
-  const domainState = classifyDomain(remote, baselineDomain, candidateDomain);
+  const baselineRevisionState = classify(
+    remote.baselineRevision,
+    baselineDomain.revisions.find((revision) => revision.revision_id === execution.identifiers.baselineRevisionId),
+    candidateDomain.revisions.find((revision) => revision.revision_id === execution.identifiers.baselineRevisionId),
+    "baseline revision",
+  );
+  const definitionState = classify(
+    remote.definition,
+    baselineDomain.definition,
+    candidateDomain.definition,
+    "definition",
+  );
   const snapshotState = classifySnapshot(remote.snapshot.document, baselineSnapshot, candidateSnapshot);
   const pointerState = classifyPointer(remote.activeRevision.document, execution.identifiers);
   const publicationState = classifyOptional(remote.candidatePublication, targetPublication, "candidate publication");
 
-  if (candidateState === "initial" && domainState === "baseline" && snapshotState === "baseline" && pointerState === "baseline" && publicationState === "absent") {
+  if (candidateState === "initial" && baselineRevisionState === "initial" && definitionState === "initial"
+      && snapshotState === "baseline" && pointerState === "baseline" && publicationState === "absent") {
     return stage("ready_to_publish", execution, candidateDomain, targetPublication, candidateRef, {});
   }
-  if (snapshotState === "candidate" && (pointerState === "baseline" || pointerState === "candidate") && publicationState === "absent") {
-    if (domainState !== "baseline" && domainState !== "candidate") {
-      throw new DevPublicationCandidateRecoveryError("candidate domain is not recoverable");
+  if (snapshotState === "candidate" && publicationState === "absent") {
+    if (pointerState === "baseline"
+        && baselineRevisionState === "initial" && candidateState === "initial" && definitionState === "initial") {
+      return stage("ready_to_complete_candidate", execution, candidateDomain, targetPublication, candidateRef, {
+        write_active_pointer: true,
+      });
     }
-    return stage("ready_to_complete_candidate", execution, candidateDomain, targetPublication, candidateRef, {
-      write_active_pointer: pointerState === "baseline",
-      write_domain: domainState === "baseline",
-      write_publication: true,
-    });
+    if (pointerState === "candidate") {
+      if (baselineRevisionState === "initial" && candidateState === "initial" && definitionState === "initial") {
+        return stage("ready_to_complete_candidate", execution, candidateDomain, targetPublication, candidateRef, {
+          write_baseline_revision: true,
+        });
+      }
+      if (baselineRevisionState === "target" && candidateState === "initial" && definitionState === "initial") {
+        return stage("ready_to_complete_candidate", execution, candidateDomain, targetPublication, candidateRef, {
+          write_candidate_revision: true,
+        });
+      }
+      if (baselineRevisionState === "target" && candidateState === "target" && definitionState === "initial") {
+        return stage("ready_to_complete_candidate", execution, candidateDomain, targetPublication, candidateRef, {
+          write_definition: true,
+        });
+      }
+      if (baselineRevisionState === "target" && candidateState === "target" && definitionState === "target") {
+        return stage("ready_to_complete_candidate", execution, candidateDomain, targetPublication, candidateRef, {
+          write_publication: true,
+        });
+      }
+    }
   }
-  if (snapshotState === "candidate" && pointerState === "candidate" && domainState === "candidate" && publicationState === "target") {
+  if (snapshotState === "candidate" && pointerState === "candidate"
+      && baselineRevisionState === "target" && candidateState === "target" && definitionState === "target"
+      && publicationState === "target") {
     return stage("candidate_recovered", execution, candidateDomain, targetPublication, candidateRef, {});
   }
   throw new DevPublicationCandidateRecoveryError("remote candidate state is not an approved resumable state");
+}
+
+function assertExactBaselinePublication(actual, expected) {
+  if (!same(actual, expected)) {
+    throw new DevPublicationCandidateRecoveryError(
+      "exact baseline PublicationRecord is required; run npm run recover:shopify-publication-rehearsal:dev",
+    );
+  }
 }
 
 function stage(status, execution, domain, targetPublication, snapshotRef, steps) {

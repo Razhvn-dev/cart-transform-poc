@@ -91,6 +91,11 @@ export function buildStaleRehearsalSnapshotCasMutation() {
   return assertRehearsalOperationIsolated(query);
 }
 
+export function findStaleCasConflict(userErrors) {
+  if (!Array.isArray(userErrors)) return null;
+  return userErrors.find((error) => ["INVALID_COMPARE_DIGEST", "STALE_OBJECT"].includes(error?.code)) ?? null;
+}
+
 export function buildDevPublicationRehearsalReconciliationQuery(runId = DEV_PUBLICATION_REHEARSAL_RUN_ID) {
   const { identifiers } = createDevPublicationRehearsalExecution(runId);
   return assertRehearsalOperationIsolated(`#graphql

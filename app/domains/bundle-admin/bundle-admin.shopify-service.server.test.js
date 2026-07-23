@@ -55,6 +55,16 @@ function createTransport({ staleRevisionUpdate = false, staleReadAfterRevisionUp
         const entry = productMetafields.get(`${variables.productId}:${variables.namespace}:${variables.key}`) ?? null;
         return { data: { product: { metafield: entry } } };
       }
+      if (query.includes("BundlePersistenceShopImportLedgers")) {
+        const requestedKeys = new Set(variables.keys.map((value) => value.split(".").at(-1)));
+        const nodes = [...shopMetafields.entries()]
+          .filter(([compoundKey]) => requestedKeys.has(compoundKey.split(":").at(-1)))
+          .map(([compoundKey, entry]) => ({ key: compoundKey.split(":").at(-1), ...entry }));
+        return { data: { shop: {
+          id: "gid://shopify/Shop/1",
+          metafields: { nodes },
+        } } };
+      }
       if (query.includes("BundlePersistenceShopMetafield")) {
         const entry = shopMetafields.get(`${variables.namespace}:${variables.key}`) ?? null;
         return { data: { shop: { id: "gid://shopify/Shop/1", metafield: entry } } };
@@ -112,9 +122,15 @@ function definitionInput() {
 
 describe("Bundle Admin Shopify dev persistence composition", () => {
   it("keeps pre-built import execution fail-closed unless its dedicated server opt-in is enabled", () => {
-    const persistence = {};
+    const persistence = { readPrebuiltImportLedger: vi.fn() };
     expect(createPrebuiltImportComposition({ persistence, enabled: false }))
-      .toEqual({ enabled: false, executor: null, ledger: null, createTargetWriter: null });
+      .toEqual({
+        enabled: false,
+        executor: null,
+        ledger: null,
+        ledgerReader: { read: expect.any(Function) },
+        createTargetWriter: null,
+      });
     expect(() => createPrebuiltImportComposition({ persistence, enabled: true }))
       .toThrow(expect.objectContaining({ code: "UNSUPPORTED_CAPABILITY" }));
   });
@@ -129,8 +145,27 @@ describe("Bundle Admin Shopify dev persistence composition", () => {
       enabled: true,
       executor: expect.any(Function),
       ledger: { read: expect.any(Function), write: expect.any(Function) },
+      ledgerReader: { read: expect.any(Function) },
       createTargetWriter: expect.any(Function),
     });
+  });
+
+  it("composes recovery assessment as read-only even when import execution is disabled", async () => {
+    const transport = createTransport();
+    const app = service(transport);
+
+    const result = await app.assessPrebuiltBundleImportRecovery({
+      import_package: importFixture(),
+      source_identities: ["legacy_paid_app:legacy-master-kit-1"],
+    });
+
+    expect(result).toMatchObject({ summary: { ready_to_execute: 1 } });
+    expect(transport.calls.filter((call) => call.query.includes("BundlePersistenceShopImportLedgers"))).toHaveLength(1);
+    expect(transport.calls.some((call) => call.query.includes("BundlePersistenceShopMetafield("))).toBe(false);
+    expect(transport.calls.some((call) => call.query.includes("BundlePersistenceMetafieldsSet"))).toBe(false);
+    expect(transport.documents.size).toBe(0);
+    expect(transport.productMetafields.size).toBe(0);
+    expect(transport.shopMetafields.size).toBe(0);
   });
 
   it("runs the guarded pre-built import chain to durable Shopify-shaped state and retries idempotently", async () => {

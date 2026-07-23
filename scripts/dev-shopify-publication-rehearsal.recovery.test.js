@@ -27,20 +27,23 @@ describe("development publication rehearsal recovery", () => {
     const recovery = createDevPublicationRehearsalRecovery(partialRemote());
 
     expect(recovery.status).toBe("ready_to_recover");
-    expect(recovery.steps).toEqual({ write_revision: true, write_definition: true, write_publication: true });
+    expect(recovery.steps).toEqual({ write_revision: true });
     expect(recovery.target.revision.status).toBe("published");
     expect(recovery.target.definition.active_revision_id).toBe(recovery.identifiers.baselineRevisionId);
     expect(recovery.target.publication.result.warnings).toContain("recovered_partial_rehearsal");
   });
 
-  it("can resume after the domain was persisted but before the audit write", () => {
+  it("advances through one-write revision and definition intermediate states", () => {
     const remote = partialRemote();
-    const first = createDevPublicationRehearsalRecovery(remote);
-    remote.baselineRevision = first.target.revision;
-    remote.definition = first.target.definition;
+    let plan = createDevPublicationRehearsalRecovery(remote);
+    remote.baselineRevision = plan.target.revision;
 
-    const resumed = createDevPublicationRehearsalRecovery(remote);
-    expect(resumed.steps).toEqual({ write_revision: false, write_definition: false, write_publication: true });
+    plan = createDevPublicationRehearsalRecovery(remote);
+    expect(plan.steps).toEqual({ write_definition: true });
+    remote.definition = plan.target.definition;
+
+    plan = createDevPublicationRehearsalRecovery(remote);
+    expect(plan.steps).toEqual({ write_publication: true });
   });
 
   it("is idempotent only after the exact approved audit exists", () => {

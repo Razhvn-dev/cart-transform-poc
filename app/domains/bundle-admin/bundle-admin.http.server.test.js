@@ -17,6 +17,7 @@ function serviceStub() {
     updateBundleDefinition: vi.fn(() => ({ definition: { bundle_definition_id: definitionId }, revisions: [] })),
     createDraftRevision: vi.fn(() => ({ revision_id: revisionId, status: "draft" })),
     reviewPrebuiltBundleImport: vi.fn(() => ({ mode: "dry_run", records: [] })),
+    assessPrebuiltBundleImportRecovery: vi.fn(() => ({ status: "ready_for_reconciliation", records: [] })),
     executePrebuiltBundleImport: vi.fn(() => ({ completed: 1, failed: 0 })),
     cloneActiveRevisionToDraft: vi.fn(() => ({ revision_id: revisionId, status: "draft" })),
     updateDraftRevision: vi.fn(() => ({ revision_id: revisionId, status: "draft" })),
@@ -175,6 +176,79 @@ describe("Bundle Admin authenticated route handlers", () => {
 
     expect(result).toMatchObject({ status: 400, body: { error: { code: "INVALID_REQUEST" } } });
     expect(service.reviewPrebuiltBundleImport).not.toHaveBeenCalled();
+  });
+
+  it("authenticates and passes a bounded package recovery assessment to the read-only service command", async () => {
+    const { routes, service } = handlers();
+    const body = {
+      import_package: { schema_version: "prebuilt_bundle_import_package.v1" },
+      source_identities: ["legacy_paid_app:bundle-1"],
+    };
+    const result = await responseBody(await routes.assessPrebuiltBundleImportRecovery({
+      request: request("POST", body),
+      params: {},
+    }));
+
+    expect(result).toMatchObject({ status: 200, body: { ok: true, data: { status: "ready_for_reconciliation" } } });
+    expect(service.assessPrebuiltBundleImportRecovery).toHaveBeenCalledWith(body);
+    expect(service.executePrebuiltBundleImport).not.toHaveBeenCalled();
+  });
+
+  it("accepts split review input for recovery assessment without accepting a client plan", async () => {
+    const { routes, service } = handlers();
+    const body = {
+      import_id: "11111111-1111-4111-8111-000000000001",
+      source_records: [],
+      mappings: [],
+      pilot_scope: {},
+      source_identities: ["legacy_paid_app:bundle-1"],
+      plan: { mode: "dry_run", records: [] },
+    };
+    const result = await responseBody(await routes.assessPrebuiltBundleImportRecovery({
+      request: request("POST", body),
+      params: {},
+    }));
+
+    expect(result.status).toBe(200);
+    expect(service.assessPrebuiltBundleImportRecovery).toHaveBeenCalledWith({
+      import_id: body.import_id,
+      source_records: [],
+      mappings: [],
+      pilot_scope: {},
+      source_identities: body.source_identities,
+    });
+  });
+
+  it("rejects malformed recovery identities before invoking the service", async () => {
+    const { routes, service } = handlers();
+    const result = await responseBody(await routes.assessPrebuiltBundleImportRecovery({
+      request: request("POST", {
+        import_package: { schema_version: "prebuilt_bundle_import_package.v1" },
+        source_identities: "legacy_paid_app:bundle-1",
+      }),
+      params: {},
+    }));
+
+    expect(result).toMatchObject({ status: 400, body: { error: { code: "INVALID_REQUEST" } } });
+    expect(service.assessPrebuiltBundleImportRecovery).not.toHaveBeenCalled();
+  });
+
+  it("does not reach recovery assessment when embedded Admin authentication fails", async () => {
+    const service = serviceStub();
+    const { routes } = handlers({
+      service,
+      authenticateAdmin: async () => { throw new Response(null, { status: 401 }); },
+    });
+    const result = await responseBody(await routes.assessPrebuiltBundleImportRecovery({
+      request: request("POST", {
+        import_package: { schema_version: "prebuilt_bundle_import_package.v1" },
+        source_identities: ["legacy_paid_app:bundle-1"],
+      }),
+      params: {},
+    }));
+
+    expect(result).toMatchObject({ status: 401, body: { error: { code: "UNAUTHENTICATED" } } });
+    expect(service.assessPrebuiltBundleImportRecovery).not.toHaveBeenCalled();
   });
 
   it("passes only validated package execution input to the guarded service command", async () => {

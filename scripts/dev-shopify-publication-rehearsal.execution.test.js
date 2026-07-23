@@ -6,6 +6,7 @@ import {
   buildDevPublicationRehearsalReconciliationQuery,
   buildStaleRehearsalSnapshotCasMutation,
   createDevPublicationRehearsalExecution,
+  findStaleCasConflict,
   summarizeDevPublicationRehearsalReconciliation,
 } from "./dev-shopify-publication-rehearsal.execution.js";
 
@@ -54,5 +55,13 @@ describe("development Shopify publication rehearsal execution", () => {
       active_pointer: "baseline",
       active_pointer_compare_digest: "pointer-digest",
     });
+  });
+
+  it("accepts both Shopify stale-CAS conflict codes", () => {
+    expect(findStaleCasConflict([{ code: "INVALID_COMPARE_DIGEST", message: "stale" }])?.code)
+      .toBe("INVALID_COMPARE_DIGEST");
+    expect(findStaleCasConflict([{ code: "STALE_OBJECT", message: "stale" }])?.code)
+      .toBe("STALE_OBJECT");
+    expect(findStaleCasConflict([{ code: "INVALID_VALUE", message: "bad" }])).toBeNull();
   });
 });

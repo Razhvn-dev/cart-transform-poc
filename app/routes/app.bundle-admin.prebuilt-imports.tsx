@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFetcher } from "@remix-run/react";
 import {
   Badge,
@@ -71,8 +71,29 @@ type ImportPlan = {
   }>;
 };
 
+type ImportReviewRequest = Record<string, unknown>;
+
+type RecoveryAssessment = {
+  import_id: string;
+  status: "ready_for_reconciliation" | "blocked";
+  summary: {
+    ready_to_execute: number;
+    already_completed: number;
+    requires_target_reconciliation: number;
+    retry_conflict: number;
+    not_eligible: number;
+  };
+  records: Array<{
+    source_identity: string;
+    target_bundle_definition_id: string | null;
+    status: "ready_to_execute" | "already_completed" | "requires_target_reconciliation" | "retry_conflict" | "not_eligible";
+    reason: string | null;
+  }>;
+};
+
 export default function PrebuiltBundleImportReviewPage() {
   const fetcher = useFetcher<BundleAdminEnvelope<ImportPlan>>();
+  const recoveryFetcher = useFetcher<BundleAdminEnvelope<RecoveryAssessment>>();
   const [importId, setImportId] = useState("");
   const [sourceRecords, setSourceRecords] = useState("[]");
   const [mappings, setMappings] = useState("[]");
@@ -84,9 +105,42 @@ export default function PrebuiltBundleImportReviewPage() {
   const [recordStatusFilter, setRecordStatusFilter] = useState("all");
   const [recordPage, setRecordPage] = useState(1);
   const [demoLoaded, setDemoLoaded] = useState(false);
+  const [lastReviewRequest, setLastReviewRequest] = useState<ImportReviewRequest | null>(null);
+  const [pendingReviewRequest, setPendingReviewRequest] = useState<ImportReviewRequest | null>(null);
+  const [recoverySelection, setRecoverySelection] = useState<string[]>([]);
+  const reviewRequestWasSubmitted = useRef(false);
   const loading = fetcher.state !== "idle";
-  const error = inputError ?? getEnvelopeError(fetcher.data)?.message ?? null;
+  const assessingRecovery = recoveryFetcher.state !== "idle";
+  const error = inputError
+    ?? getEnvelopeError(fetcher.data)?.message
+    ?? (recoverySelection.length > 0 ? getEnvelopeError(recoveryFetcher.data)?.message : null)
+    ?? null;
   const plan = fetcher.data?.ok ? fetcher.data.data : null;
+  const recovery = recoverySelection.length > 0 && recoveryFetcher.data?.ok
+    ? recoveryFetcher.data.data
+    : null;
+
+  useEffect(() => {
+    if (fetcher.state !== "idle") {
+      reviewRequestWasSubmitted.current = true;
+      return;
+    }
+    if (!reviewRequestWasSubmitted.current || !pendingReviewRequest) return;
+    reviewRequestWasSubmitted.current = false;
+    if (fetcher.data?.ok) setLastReviewRequest(pendingReviewRequest);
+    setPendingReviewRequest(null);
+  }, [fetcher.data, fetcher.state, pendingReviewRequest]);
+
+  function submitReviewRequest(request: ImportReviewRequest) {
+    setLastReviewRequest(null);
+    setPendingReviewRequest(request);
+    setRecoverySelection([]);
+    fetcher.submit(JSON.stringify(request), {
+      method: "post",
+      action: "/app/bundle-admin/prebuilt-imports/review",
+      encType: "application/json",
+    });
+  }
 
   function submitReview() {
     const source = parseImportReviewDocument(sourceRecords, "Source records", "array");
@@ -101,15 +155,11 @@ export default function PrebuiltBundleImportReviewPage() {
       return;
     }
     setInputError(null);
-    fetcher.submit(JSON.stringify({
+    submitReviewRequest({
       import_id: importId.trim(),
       source_records: source.value,
       mappings: mapping.value,
       pilot_scope: scope.value,
-    }), {
-      method: "post",
-      action: "/app/bundle-admin/prebuilt-imports/review",
-      encType: "application/json",
     });
   }
 
@@ -120,11 +170,7 @@ export default function PrebuiltBundleImportReviewPage() {
       return;
     }
     setInputError(null);
-    fetcher.submit(JSON.stringify({ import_package: parsed.value }), {
-      method: "post",
-      action: "/app/bundle-admin/prebuilt-imports/review",
-      encType: "application/json",
-    });
+    submitReviewRequest({ import_package: parsed.value });
   }
 
   function submitRawSourceReview() {
@@ -141,15 +187,28 @@ export default function PrebuiltBundleImportReviewPage() {
       return;
     }
     setInputError(null);
-    fetcher.submit(JSON.stringify({
+    submitReviewRequest({
       import_id: importId.trim(),
       raw_source_export: raw.value,
       source_mapping_profile: profile.value,
       mappings: mapping.value,
       pilot_scope: scope.value,
+    });
+  }
+
+  function assessRecovery(sourceIdentities: string[]) {
+    if (loading || !lastReviewRequest || sourceIdentities.length === 0 || sourceIdentities.length > RECORDS_PER_PAGE) {
+      setInputError("Review input and between 1 and 25 visible source records are required for recovery assessment.");
+      return;
+    }
+    setInputError(null);
+    setRecoverySelection(sourceIdentities);
+    recoveryFetcher.submit(JSON.stringify({
+      ...lastReviewRequest,
+      source_identities: sourceIdentities,
     }), {
       method: "post",
-      action: "/app/bundle-admin/prebuilt-imports/review",
+      action: "/app/bundle-admin/prebuilt-imports/recovery-assessment",
       encType: "application/json",
     });
   }
@@ -221,6 +280,10 @@ export default function PrebuiltBundleImportReviewPage() {
           }}
           page={recordPage}
           onPageChange={setRecordPage}
+          onAssessRecovery={assessRecovery}
+          assessingRecovery={assessingRecovery}
+          reviewLoading={loading}
+          recovery={recovery}
         /> : null}
       </BlockStack>
     </Page>
@@ -233,12 +296,20 @@ function ImportPlanResult({
   onStatusFilterChange,
   page,
   onPageChange,
+  onAssessRecovery,
+  assessingRecovery,
+  reviewLoading,
+  recovery,
 }: {
   plan: ImportPlan;
   statusFilter: string;
   onStatusFilterChange: (value: string) => void;
   page: number;
   onPageChange: (page: number) => void;
+  onAssessRecovery: (sourceIdentities: string[]) => void;
+  assessingRecovery: boolean;
+  reviewLoading: boolean;
+  recovery: RecoveryAssessment | null;
 }) {
   const filteredRecords = plan.records.filter((record) => (
     statusFilter === "all" || record.status === statusFilter
@@ -276,17 +347,26 @@ function ImportPlanResult({
         <BlockStack gap="200">
           <InlineStack align="space-between" blockAlign="end" gap="300" wrap>
             <Text as="h2" variant="headingMd">Records</Text>
-            <Select
-              label="Record status"
-              options={[
-                { label: "All statuses", value: "all" },
-                { label: "Ready for confirmation", value: "ready_for_confirmation" },
-                { label: "Needs review", value: "needs_review" },
-                { label: "Rejected", value: "rejected" },
-              ]}
-              value={statusFilter}
-              onChange={onStatusFilterChange}
-            />
+            <InlineStack gap="200" blockAlign="end" wrap>
+              <Select
+                label="Record status"
+                options={[
+                  { label: "All statuses", value: "all" },
+                  { label: "Ready for confirmation", value: "ready_for_confirmation" },
+                  { label: "Needs review", value: "needs_review" },
+                  { label: "Rejected", value: "rejected" },
+                ]}
+                value={statusFilter}
+                onChange={onStatusFilterChange}
+              />
+              <Button
+                loading={assessingRecovery}
+                disabled={reviewLoading || pageRecords.length === 0}
+                onClick={() => onAssessRecovery(pageRecords.map((record) => record.source_identity))}
+              >
+                Assess this page (read only)
+              </Button>
+            </InlineStack>
           </InlineStack>
           {plan.records.length === 0 ? <Text as="p" tone="subdued">No source records were submitted.</Text> : pageRecords.map((record) => (
             <BlockStack key={record.source_identity} gap="100">
@@ -310,7 +390,47 @@ function ImportPlanResult({
           </InlineStack> : null}
         </BlockStack>
       </Card>
+      {recovery ? <RecoveryAssessmentResult assessment={recovery} /> : null}
     </BlockStack>
+  );
+}
+
+function RecoveryAssessmentResult({ assessment }: { assessment: RecoveryAssessment }) {
+  return (
+    <Card>
+      <BlockStack gap="200">
+        <InlineStack align="space-between" blockAlign="center">
+          <Text as="h2" variant="headingMd">Recovery assessment</Text>
+          <Badge tone={assessment.status === "blocked" ? "critical" : "info"}>Read only</Badge>
+        </InlineStack>
+        <Text as="p" tone="subdued" variant="bodySm">
+          The server re-reviewed the submitted import before reading ledger state. No target writes were attempted.
+        </Text>
+        <InlineStack gap="400" wrap>
+          <Count label="Fresh" value={assessment.summary.ready_to_execute} />
+          <Count label="Completed" value={assessment.summary.already_completed} />
+          <Count label="Needs reconciliation" value={assessment.summary.requires_target_reconciliation} />
+          <Count label="Conflicts" value={assessment.summary.retry_conflict} />
+          <Count label="Not eligible" value={assessment.summary.not_eligible} />
+        </InlineStack>
+        {assessment.records.map((record) => (
+          <InlineStack key={record.source_identity} align="space-between" blockAlign="center" gap="200" wrap>
+            <BlockStack gap="050">
+              <Text as="span" fontWeight="semibold">{record.source_identity}</Text>
+              {record.reason ? <Text as="span" tone="subdued" variant="bodySm">{record.reason}</Text> : null}
+            </BlockStack>
+            <Badge tone={record.status === "already_completed"
+              ? "success"
+              : record.status === "retry_conflict"
+                ? "critical"
+                : "attention"}
+            >
+              {record.status}
+            </Badge>
+          </InlineStack>
+        ))}
+      </BlockStack>
+    </Card>
   );
 }
 

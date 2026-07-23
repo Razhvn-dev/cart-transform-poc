@@ -9,23 +9,25 @@ import {
   DEV_SHOPIFY_APP_CLIENT_ID,
   createDevShopifyPersistenceAdapter,
 } from "../extensions/master-kit-expand/src/config/shopify-dev-persistence.adapter.js";
-import { DEV_PUBLICATION_REHEARSAL_BINDINGS, DEV_PUBLICATION_REHEARSAL_TARGET } from "./dev-shopify-publication-rehearsal.js";
 import {
-  DEV_PUBLICATION_REHEARSAL_RUN_ID,
+  DEV_PUBLICATION_REHEARSAL_BINDINGS,
+  DEV_PUBLICATION_REHEARSAL_TARGET,
+} from "./dev-shopify-publication-rehearsal.js";
+import {
   assertRehearsalOperationIsolated,
   buildDevPublicationRehearsalReconciliationQuery,
 } from "./dev-shopify-publication-rehearsal.execution.js";
-import { executeDevPublicationBaselineRecovery } from "./dev-shopify-publication-rehearsal.recovery-execution.js";
+import { executeDevPublicationRollbackRecovery } from "./dev-shopify-publication-rehearsal.rollback-recovery-execution.js";
+import { createDevPublicationRollbackRecovery } from "./dev-shopify-publication-rehearsal.rollback-recovery.js";
+import { executeDevPublicationRollbackStaging } from "./dev-shopify-publication-rehearsal.rollback-staging-execution.js";
 import { parseDevPublicationRehearsalCliCommand } from "./dev-shopify-publication-rehearsal.transport.js";
 import { createShopifyCliReadSafeExecutor } from "./shopify-cli-read-safe-executor.js";
 
-const execFileAsync = promisify(execFile);
 const root = fileURLToPath(new URL("..", import.meta.url));
 const command = parseDevPublicationRehearsalCliCommand({
   argv: process.argv.slice(2),
-  operation: "baseline_recovery",
+  operation: "rollback_recovery",
 });
-
 if (command.mode !== "apply") {
   process.stdout.write(`${JSON.stringify({
     status: command.mode === "help" ? "help" : "local_plan",
@@ -34,26 +36,23 @@ if (command.mode !== "apply") {
     apply_required: true,
     exact_confirmation: command.confirmation,
     mutation_retry: "prohibited",
+    ambiguous_result: "stop and rerun this command only after independent reconciliation",
   }, null, 2)}\n`);
 } else {
-  const cliEntrypoint = join(root, "node_modules", "@shopify", "cli", "bin", "run.js");
-  const directory = await mkdtemp(join(tmpdir(), "aces-dev-publication-recovery-"));
+  const directory = await mkdtemp(join(tmpdir(), "aces-dev-publication-rollback-recovery-"));
   const executeCli = createShopifyCliReadSafeExecutor({
-    cliEntrypoint,
+    cliEntrypoint: join(root, "node_modules", "@shopify", "cli", "bin", "run.js"),
     directory,
-    execFileAsync,
+    execFileAsync: promisify(execFile),
     root,
     target: DEV_PUBLICATION_REHEARSAL_TARGET,
+    timeoutMs: 180_000,
   });
-  const execute = (query, { variables = {} } = {}) => {
-    assertRehearsalOperationIsolated(query);
-    return executeCli(query, { variables });
-  };
-
   try {
-    const readRemote = async () => toRemote(
-      (await execute(buildDevPublicationRehearsalReconciliationQuery())).data,
-    );
+    const execute = (query, { variables = {} } = {}) => {
+      assertRehearsalOperationIsolated(query);
+      return executeCli(query, { variables });
+    };
     const persistence = createDevShopifyPersistenceAdapter({
       appClientId: DEV_SHOPIFY_APP_CLIENT_ID,
       bindings: {
@@ -67,13 +66,12 @@ if (command.mode !== "apply") {
       },
       execute,
     });
-    const result = await executeDevPublicationBaselineRecovery({ readRemote, persistence });
-    process.stdout.write(`${JSON.stringify({
-      status: result.status,
-      run_id: DEV_PUBLICATION_REHEARSAL_RUN_ID,
-      completed_steps: result.completed_steps,
-      next_invocation_required: result.status !== "baseline_recovered",
-    }, null, 2)}\n`);
+    const readRemote = async () => toRemote((await execute(buildDevPublicationRehearsalReconciliationQuery())).data);
+    const plan = createDevPublicationRollbackRecovery(await readRemote());
+    const result = plan.status.startsWith("ready_to_stage_rollback_")
+      ? await executeDevPublicationRollbackStaging({ readRemote, persistence })
+      : await executeDevPublicationRollbackRecovery({ readRemote, persistence });
+    process.stdout.write(`${JSON.stringify({ ...result, target: DEV_PUBLICATION_REHEARSAL_TARGET }, null, 2)}\n`);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -88,32 +86,18 @@ function toRemote(data) {
     candidatePublication: document(data.candidatePublication),
     rollbackPublication: document(data.rollbackPublication),
     snapshot: carrier(data.product?.snapshot, "Snapshot"),
-    activeRevision: carrier(data.product?.activeRevision, "active revision pointer"),
+    activeRevision: carrier(data.product?.activeRevision, "active pointer"),
   };
 }
 
 function document(node) {
-  if (node === null || node === undefined) return null;
+  if (!node) return null;
   const field = node.fields?.find((candidate) => candidate.key === "document");
-  if (!field) throw new Error(`rehearsal ${node.handle ?? "Metaobject"} has no document field`);
-  return parseJson(field.jsonValue ?? field.value, `Metaobject ${node.handle}`);
+  if (!field) throw new Error("rehearsal Metaobject document field is missing");
+  return field.jsonValue ?? JSON.parse(field.value);
 }
 
 function carrier(metafield, label) {
   if (!metafield) throw new Error(`isolated ${label} is missing`);
-  return {
-    document: metafield.jsonValue === null || metafield.jsonValue === undefined
-      ? metafield.value
-      : parseJson(metafield.jsonValue, label),
-    compareDigest: metafield.compareDigest ?? null,
-  };
-}
-
-function parseJson(value, label) {
-  if (value && typeof value === "object") return structuredClone(value);
-  try {
-    return JSON.parse(value);
-  } catch {
-    throw new Error(`${label} is not valid JSON`);
-  }
+  return { document: metafield.jsonValue ?? metafield.value, compareDigest: metafield.compareDigest ?? null };
 }

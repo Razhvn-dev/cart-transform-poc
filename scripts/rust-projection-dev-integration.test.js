@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { posix, resolve } from "node:path";
 
 import { describe, expect, test, vi } from "vitest";
 
@@ -185,6 +185,23 @@ describe("Rust hybrid development integration contract", () => {
     expect(paths.query).toBe(`${paths.extensionDirectory}\\src\\run.graphql`);
     expect(paths.wasm).toBe(`${paths.extensionDirectory}\\dist\\index.wasm`);
     expect(paths.appConfig).toBe("C:\\repo\\shopify.app.rust-spike-dev.toml");
+  });
+
+  test("resolves native Linux staging paths without Windows separators", () => {
+    const paths = resolveStagingPaths(
+      "/home/devbox/project/cart-transform-poc",
+      posix,
+    );
+    expect(paths.root).toBe(
+      "/home/devbox/project/cart-transform-poc/.local/rust-projection-dev-integration",
+    );
+    expect(paths.extensionDirectory).toBe(
+      `${paths.root}/extensions/master-kit-expand`,
+    );
+    expect(paths.wasm).toBe(`${paths.extensionDirectory}/dist/index.wasm`);
+    expect(paths.appConfig).toBe(
+      "/home/devbox/project/cart-transform-poc/shopify.app.rust-spike-dev.toml",
+    );
   });
 
   test("defaults to dry-run and enforces one explicit execution mode", () => {

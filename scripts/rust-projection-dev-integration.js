@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { win32 } from "node:path";
+import * as nativePath from "node:path";
 
 export const TARGET = Object.freeze({
   appName: "cart-transform-poc-dev",
@@ -180,16 +180,24 @@ export function renderStagingAppConfig(sourceAppConfig) {
   return sourceAppConfig.replace(clientIdLine, (line) => `${line}${block}`);
 }
 
-export function resolveStagingPaths(repoRoot) {
-  const root = win32.join(repoRoot, ".local", "rust-projection-dev-integration");
-  const extensionDirectory = win32.join(root, "extensions", "master-kit-expand");
+export function resolveStagingPaths(repoRoot, pathImplementation = nativePath) {
+  const root = pathImplementation.join(
+    repoRoot,
+    ".local",
+    "rust-projection-dev-integration",
+  );
+  const extensionDirectory = pathImplementation.join(
+    root,
+    "extensions",
+    "master-kit-expand",
+  );
   return Object.freeze({
     root,
     extensionDirectory,
-    manifest: win32.join(extensionDirectory, "shopify.extension.toml"),
-    query: win32.join(extensionDirectory, "src", "run.graphql"),
-    wasm: win32.join(extensionDirectory, "dist", "index.wasm"),
-    appConfig: win32.join(repoRoot, TARGET.appConfig),
+    manifest: pathImplementation.join(extensionDirectory, "shopify.extension.toml"),
+    query: pathImplementation.join(extensionDirectory, "src", "run.graphql"),
+    wasm: pathImplementation.join(extensionDirectory, "dist", "index.wasm"),
+    appConfig: pathImplementation.join(repoRoot, TARGET.appConfig),
   });
 }
 

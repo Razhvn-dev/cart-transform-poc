@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -21,13 +22,19 @@ import {
   restoreProductionFunctionProfile,
   withTemporaryFunctionProfile,
 } from "./function-profile.mjs";
+import { resolveJavyPlatform } from "./javy-platform.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const cliBin = resolve(__dirname, "../node_modules/@shopify/cli/bin");
 const javyVersion = "9.0.0";
 const javyPluginVersion = "4";
+const javyPlatform = resolveJavyPlatform({
+  platform: process.platform,
+  arch: process.arch,
+  version: javyVersion,
+});
 
-const javyExe = join(cliBin, `javy-${javyVersion}.exe`);
+const javyExe = join(cliBin, javyPlatform.executableName);
 const javyPlugin = join(cliBin, `shopify_functions_javy_v${javyPluginVersion}.wasm`);
 const distDir = join(extDir, "dist");
 const functionJs = join(distDir, "function.js");
@@ -76,11 +83,12 @@ function run(cmd, cwd = extDir) {
 async function ensureJavy() {
   if (!existsSync(javyExe)) {
     console.log("Downloading javy...");
-    const javyUrl = `https://github.com/bytecodealliance/javy/releases/download/v${javyVersion}/javy-x86_64-windows-v${javyVersion}.gz`;
+    const javyUrl = `https://github.com/bytecodealliance/javy/releases/download/v${javyVersion}/${javyPlatform.assetName}`;
     const response = await fetch(javyUrl);
     if (!response.ok) throw new Error(`Failed to download javy: ${javyUrl}`);
     writeFileSync(javyExe, gunzipSync(Buffer.from(await response.arrayBuffer())));
   }
+  if (process.platform !== "win32") chmodSync(javyExe, 0o755);
 
   if (!existsSync(javyPlugin)) {
     console.log("Downloading Shopify javy plugin...");

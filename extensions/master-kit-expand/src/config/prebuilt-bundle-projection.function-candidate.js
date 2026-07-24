@@ -1,6 +1,7 @@
 import { parseJsonObjectMetafield } from "./bundle-runtime.extraction.js";
 import { observePrebuiltBundleCartMetadata } from "./prebuilt-bundle-cart-metadata.observation.js";
 import { isValidPrebuiltBundleExpandProjection } from "./prebuilt-bundle-expand-projection.js";
+import { isValidPrebuiltBundleExpandProjectionV2 } from "./prebuilt-bundle-expand-projection-v2.js";
 
 /**
  * Hosted-runtime path for fixed pre-built bundles. Publication resolves the
@@ -68,10 +69,15 @@ export function buildSinglePrebuiltBundleProjectionFunctionResult(input) {
 
 function projectionMatchesLine(projection, line) {
   return projection != null
-    && isValidPrebuiltBundleExpandProjection(projection)
+    && isValidProjection(projection)
     && projection.parent.variant_gid === line?.merchandise?.id
     && projection.parent.product_gid === line?.merchandise?.product?.id
     && projectionPriceMatchesLine(projection, line);
+}
+
+function isValidProjection(projection) {
+  return isValidPrebuiltBundleExpandProjection(projection)
+    || isValidPrebuiltBundleExpandProjectionV2(projection);
 }
 
 function projectionPriceMatchesLine(projection, line) {
@@ -79,7 +85,16 @@ function projectionPriceMatchesLine(projection, line) {
   const componentPriceCents = projection.components.reduce((total, component) => {
     // Projection validation already guarantees the fixed two-decimal shape.
     const cents = Math.round(Number(component.fixed_price_per_unit) * 100);
-    return total == null || !Number.isSafeInteger(cents) ? null : total + cents;
+    const quantity = component.quantity ?? 1;
+    const subtotal = cents * quantity;
+    if (total == null
+      || !Number.isSafeInteger(cents)
+      || !Number.isSafeInteger(quantity)
+      || !Number.isSafeInteger(subtotal)) {
+      return null;
+    }
+    const nextTotal = total + subtotal;
+    return Number.isSafeInteger(nextTotal) ? nextTotal : null;
   }, 0);
   return parentPriceCents != null && componentPriceCents === parentPriceCents;
 }
@@ -106,7 +121,7 @@ function buildExpandOperation({ line, metadata, projection }) {
       title: projection.parent.title,
       expandedCartItems: projection.components.map((component) => ({
         merchandiseId: component.variant_gid,
-        quantity: 1,
+        quantity: component.quantity ?? 1,
         attributes: [
           parentAttributes[0],
           parentAttributes[1],

@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aces.example/schemas/prebuilt-partial-refund-acceptance.v1.schema.json",
+  "title": "Pre-built Partial Refund Acceptance Evidence V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "refund_scope", "evidence"],
+  "properties": {
+    "schema_version": {
+      "const": "prebuilt_partial_refund_acceptance.v1"
+    },
+    "refund_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order_gid",
+        "order_line_item_gid",
+        "bundle_instance_id",
+        "component_variant_gid",
+        "parent_variant_gid",
+        "currency_code",
+        "fixed_price_per_unit_minor",
+        "expected_ordered_quantity",
+        "expected_already_refunded_quantity",
+        "requested_refund_quantity",
+        "restock_requested"
+      ],
+      "properties": {
+        "order_gid": { "$ref": "#/$defs/orderGid" },
+        "order_line_item_gid": { "$ref": "#/$defs/lineItemGid" },
+        "bundle_instance_id": { "$ref": "#/$defs/bundleInstanceId" },
+        "component_variant_gid": { "$ref": "#/$defs/productVariantGid" },
+        "parent_variant_gid": { "$ref": "#/$defs/productVariantGid" },
+        "currency_code": { "$ref": "#/$defs/currencyCode" },
+        "fixed_price_per_unit_minor": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "expected_ordered_quantity": {
+          "$ref": "#/$defs/safePositiveInteger"
+        },
+        "expected_already_refunded_quantity": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "requested_refund_quantity": {
+          "$ref": "#/$defs/safePositiveInteger"
+        },
+        "restock_requested": { "type": "boolean" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "order_component": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/orderComponentEvidence" }
+          ]
+        },
+        "prior_refunds": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "array",
+              "items": { "$ref": "#/$defs/priorRefundEvidence" }
+            }
+          ]
+        },
+        "refund": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/refundEvidence" }]
+        },
+        "inventory": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/inventoryEvidence" }]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "orderGid": {
+      "type": "string",
+      "pattern": "^gid://shopify/Order/[0-9]+$"
+    },
+    "lineItemGid": {
+      "type": "string",
+      "pattern": "^gid://shopify/LineItem/[0-9]+$"
+    },
+    "productVariantGid": {
+      "type": "string",
+      "pattern": "^gid://shopify/ProductVariant/[0-9]+$"
+    },
+    "refundGid": {
+      "type": "string",
+      "pattern": "^gid://shopify/Refund/[0-9]+$"
+    },
+    "orderTransactionGid": {
+      "type": "string",
+      "pattern": "^gid://shopify/OrderTransaction/[0-9]+$"
+    },
+    "locationGid": {
+      "type": "string",
+      "pattern": "^gid://shopify/Location/[0-9]+$"
+    },
+    "inventoryAdjustmentGid": {
+      "type": "string",
+      "pattern": "^gid://shopify/InventoryAdjustmentGroup/[0-9]+$"
+    },
+    "bundleInstanceId": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "currencyCode": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "safeInteger": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "safePositiveInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "orderComponentEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order_gid",
+        "order_line_item_gid",
+        "bundle_instance_id",
+        "variant_gid",
+        "parent_variant_gid",
+        "ordered_quantity",
+        "already_refunded_quantity"
+      ],
+      "properties": {
+        "order_gid": { "$ref": "#/$defs/orderGid" },
+        "order_line_item_gid": { "$ref": "#/$defs/lineItemGid" },
+        "bundle_instance_id": { "$ref": "#/$defs/bundleInstanceId" },
+        "variant_gid": { "$ref": "#/$defs/productVariantGid" },
+        "parent_variant_gid": { "$ref": "#/$defs/productVariantGid" },
+        "ordered_quantity": { "$ref": "#/$defs/safePositiveInteger" },
+        "already_refunded_quantity": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        }
+      }
+    },
+    "priorRefundEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "refund_gid",
+        "refund_transaction_gid",
+        "order_gid",
+        "order_line_item_gid",
+        "bundle_instance_id",
+        "quantity"
+      ],
+      "properties": {
+        "refund_gid": { "$ref": "#/$defs/refundGid" },
+        "refund_transaction_gid": {
+          "$ref": "#/$defs/orderTransactionGid"
+        },
+        "order_gid": { "$ref": "#/$defs/orderGid" },
+        "order_line_item_gid": { "$ref": "#/$defs/lineItemGid" },
+        "bundle_instance_id": { "$ref": "#/$defs/bundleInstanceId" },
+        "quantity": { "$ref": "#/$defs/safePositiveInteger" }
+      }
+    },
+    "refundEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "refund_gid",
+        "refund_transaction_gid",
+        "order_gid",
+        "order_line_item_gid",
+        "bundle_instance_id",
+        "variant_gid",
+        "parent_variant_gid",
+        "quantity",
+        "shopify_calculated_amount",
+        "shopify_actual_amount"
+      ],
+      "properties": {
+        "refund_gid": { "$ref": "#/$defs/refundGid" },
+        "refund_transaction_gid": {
+          "$ref": "#/$defs/orderTransactionGid"
+        },
+        "order_gid": { "$ref": "#/$defs/orderGid" },
+        "order_line_item_gid": { "$ref": "#/$defs/lineItemGid" },
+        "bundle_instance_id": { "$ref": "#/$defs/bundleInstanceId" },
+        "variant_gid": { "$ref": "#/$defs/productVariantGid" },
+        "parent_variant_gid": { "$ref": "#/$defs/productVariantGid" },
+        "quantity": { "$ref": "#/$defs/safePositiveInteger" },
+        "shopify_calculated_amount": {
+          "$ref": "#/$defs/shopifyAmountOrNull"
+        },
+        "shopify_actual_amount": {
+          "$ref": "#/$defs/shopifyAmountOrNull"
+        }
+      }
+    },
+    "shopifyAmountOrNull": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/shopifyAmountReadback" }]
+    },
+    "shopifyAmountReadback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "refund_gid",
+        "refund_transaction_gid",
+        "order_gid",
+        "order_line_item_gid",
+        "bundle_instance_id",
+        "currency_code",
+        "component_subtotal_minor",
+        "discount_allocation_minor",
+        "tax_allocation_minor",
+        "shipping_allocation_minor",
+        "rounding_adjustment_minor",
+        "total_minor"
+      ],
+      "properties": {
+        "source": { "type": "string" },
+        "refund_gid": { "$ref": "#/$defs/refundGid" },
+        "refund_transaction_gid": {
+          "$ref": "#/$defs/orderTransactionGid"
+        },
+        "order_gid": { "$ref": "#/$defs/orderGid" },
+        "order_line_item_gid": { "$ref": "#/$defs/lineItemGid" },
+        "bundle_instance_id": { "$ref": "#/$defs/bundleInstanceId" },
+        "currency_code": { "$ref": "#/$defs/currencyCode" },
+        "component_subtotal_minor": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "discount_allocation_minor": { "$ref": "#/$defs/safeInteger" },
+        "tax_allocation_minor": { "$ref": "#/$defs/safeInteger" },
+        "shipping_allocation_minor": { "$ref": "#/$defs/safeInteger" },
+        "rounding_adjustment_minor": { "$ref": "#/$defs/safeInteger" },
+        "total_minor": { "$ref": "#/$defs/safeInteger" }
+      }
+    },
+    "inventoryEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "refund_gid",
+        "refund_transaction_gid",
+        "order_gid",
+        "order_line_item_gid",
+        "bundle_instance_id",
+        "component_variant_gid",
+        "location_gid",
+        "inventory_adjustment_gid",
+        "component_before_quantity",
+        "component_after_quantity",
+        "component_restock_delta",
+        "parent_variant_gid",
+        "parent_before_quantity",
+        "parent_after_quantity",
+        "parent_delta"
+      ],
+      "properties": {
+        "refund_gid": { "$ref": "#/$defs/refundGid" },
+        "refund_transaction_gid": {
+          "$ref": "#/$defs/orderTransactionGid"
+        },
+        "order_gid": { "$ref": "#/$defs/orderGid" },
+        "order_line_item_gid": { "$ref": "#/$defs/lineItemGid" },
+        "bundle_instance_id": { "$ref": "#/$defs/bundleInstanceId" },
+        "component_variant_gid": { "$ref": "#/$defs/productVariantGid" },
+        "location_gid": { "$ref": "#/$defs/locationGid" },
+        "inventory_adjustment_gid": {
+          "$ref": "#/$defs/inventoryAdjustmentGid"
+        },
+        "component_before_quantity": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "component_after_quantity": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "component_restock_delta": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "parent_variant_gid": { "$ref": "#/$defs/productVariantGid" },
+        "parent_before_quantity": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "parent_after_quantity": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "parent_delta": { "$ref": "#/$defs/safeInteger" }
+      }
+    }
+  }
+}

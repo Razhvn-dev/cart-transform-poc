@@ -1,0 +1,115 @@
+{
+  "cart": {
+    "lines": [
+      {
+        "id": "gid://shopify/CartLine/prebuilt-quantity-v2",
+        "quantity": 1,
+        "cost": {
+          "amountPerQuantity": {
+            "amount": "14.50"
+          }
+        },
+        "bundleId": {
+          "value": "906ec234-e2b5-4bc9-a13f-a2dfedfa7694"
+        },
+        "bundleSchemaVersion": {
+          "value": "1"
+        },
+        "parentProductGid": {
+          "value": "gid://shopify/Product/100"
+        },
+        "parentVariantGid": {
+          "value": "gid://shopify/ProductVariant/200"
+        },
+        "parentSku": {
+          "value": "BUNDLE-100"
+        },
+        "parentTitle": {
+          "value": "Bundle 100"
+        },
+        "builderEfiVariantId": null,
+        "builderFuelVariantId": null,
+        "builderIgnitionVariantId": null,
+        "builderDisplayVariantId": null,
+        "merchandise": {
+          "__typename": "ProductVariant",
+          "id": "gid://shopify/ProductVariant/200",
+          "product": {
+            "id": "gid://shopify/Product/100",
+            "prebuiltExpandProjectionMetafield": {
+              "jsonValue": {
+                "schema_version": "prebuilt_bundle_expand_projection.v2",
+                "contract_identity": "prebuilt_bundle_expand_projection.v2",
+                "checksum_algorithm": "fnv1a-32",
+                "bundle_definition_id": "77770000-0000-4000-8000-000000000011",
+                "published_revision_id": "77770000-0000-4000-8000-000000000012",
+                "source_snapshot_checksum": "quantity-v2-snapshot",
+                "parent": {
+                  "product_gid": "gid://shopify/Product/100",
+                  "variant_gid": "gid://shopify/ProductVariant/200",
+                  "sku": "BUNDLE-100",
+                  "title": "Bundle 100",
+                  "fixed_price_per_unit": "14.50"
+                },
+                "components": [
+                  {
+                    "sequence": 1,
+                    "group": "group-1",
+                    "role": "role-1",
+                    "product_gid": "gid://shopify/Product/101",
+                    "variant_gid": "gid://shopify/ProductVariant/201",
+                    "sku": "PART-1",
+                    "title": "Part 1",
+                    "quantity": 2,
+                    "fixed_price_per_unit": "1.25",
+                    "source_identity": "bundles-app:bundle-100:component-1",
+                    "audit_provenance": {
+                      "source_system": "bundles-app",
+                      "source_bundle_id": "bundle-100",
+                      "source_record_checksum": "record-checksum-100"
+                    }
+                  },
+                  {
+                    "sequence": 2,
+                    "group": "group-2",
+                    "role": "role-2",
+                    "product_gid": "gid://shopify/Product/102",
+                    "variant_gid": "gid://shopify/ProductVariant/202",
+                    "sku": "PART-2",
+                    "title": "Part 2",
+                    "quantity": 4,
+                    "fixed_price_per_unit": "2.00",
+                    "source_identity": "bundles-app:bundle-100:component-2",
+                    "audit_provenance": {
+                      "source_system": "bundles-app",
+                      "source_bundle_id": "bundle-100",
+                      "source_record_checksum": "record-checksum-100"
+                    }
+                  },
+                  {
+                    "sequence": 3,
+                    "group": "group-3",
+                    "role": "role-3",
+                    "product_gid": "gid://shopify/Product/103",
+                    "variant_gid": "gid://shopify/ProductVariant/203",
+                    "sku": "PART-3",
+                    "title": "Part 3",
+                    "quantity": 8,
+                    "fixed_price_per_unit": "0.50",
+                    "source_identity": "bundles-app:bundle-100:component-3",
+                    "audit_provenance": {
+                      "source_system": "bundles-app",
+                      "source_bundle_id": "bundle-100",
+                      "source_record_checksum": "record-checksum-100"
+                    }
+                  }
+                ],
+                "checksum": "fc699c6c"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

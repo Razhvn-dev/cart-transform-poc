@@ -143,6 +143,7 @@ fn serialize_expanded_item_price(
 #[derive(PartialEq, Debug)]
 pub struct Projection {
     pub schema_version: String,
+    pub contract_identity: Option<String>,
     pub checksum_algorithm: String,
     pub bundle_definition_id: String,
     pub published_revision_id: String,
@@ -158,6 +159,7 @@ pub struct ProjectionParent {
     pub variant_gid: String,
     pub sku: String,
     pub title: String,
+    pub fixed_price_per_unit: Option<String>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -170,6 +172,16 @@ pub struct ProjectionComponent {
     pub sku: String,
     pub title: String,
     pub fixed_price_per_unit: String,
+    pub quantity: i64,
+    pub source_identity: Option<String>,
+    pub audit_provenance: Option<ProjectionAuditProvenance>,
+}
+
+#[derive(PartialEq, Debug)]
+pub struct ProjectionAuditProvenance {
+    pub source_system: String,
+    pub source_bundle_id: String,
+    pub source_record_checksum: String,
 }
 
 struct BundleMetadata<'a> {
@@ -299,19 +311,72 @@ fn valid_projection(line: &schema::run::input::cart::Lines, projection: &Project
     else {
         return false;
     };
-    let Some(parent_price_cents) = decimal_cents(line.cost().amount_per_quantity().amount()) else {
+    let is_v2_schema = projection.schema_version == "prebuilt_bundle_expand_projection.v2";
+    let parse_projection_price = if is_v2_schema {
+        decimal_cents_v2
+    } else {
+        decimal_cents
+    };
+    let parent_price_cents = if is_v2_schema {
+        decimal_cents_safe(line.cost().amount_per_quantity().amount())
+    } else {
+        decimal_cents(line.cost().amount_per_quantity().amount())
+    };
+    let Some(parent_price_cents) = parent_price_cents else {
         return false;
     };
-    let Some(component_price_cents) = projection
-        .components
-        .iter()
-        .try_fold(0_i64, |total, component| {
-            total.checked_add(decimal_cents(&component.fixed_price_per_unit)?)
-        })
+    let Some(component_price_cents) =
+        projection
+            .components
+            .iter()
+            .try_fold(0_i64, |total, component| {
+                let unit_price = parse_projection_price(&component.fixed_price_per_unit)?;
+                let quantity_price = unit_price.checked_mul(component.quantity)?;
+                let next_total = total.checked_add(quantity_price)?;
+                if is_v2_schema
+                    && (quantity_price > 9_007_199_254_740_991
+                        || next_total > 9_007_199_254_740_991)
+                {
+                    None
+                } else {
+                    Some(next_total)
+                }
+            })
     else {
         return false;
     };
-    projection.schema_version == "prebuilt_bundle_expand_projection.v1"
+    let is_v1 = projection.schema_version == "prebuilt_bundle_expand_projection.v1"
+        && projection.contract_identity.is_none()
+        && projection.parent.fixed_price_per_unit.is_none()
+        && projection.components.iter().all(|component| {
+            component.quantity == 1
+                && component.source_identity.is_none()
+                && component.audit_provenance.is_none()
+        });
+    let is_v2 = projection.schema_version == "prebuilt_bundle_expand_projection.v2"
+        && projection.contract_identity.as_deref() == Some("prebuilt_bundle_expand_projection.v2")
+        && projection
+            .parent
+            .fixed_price_per_unit
+            .as_deref()
+            .and_then(decimal_cents_v2)
+            == Some(parent_price_cents)
+        && projection.components.iter().all(|component| {
+            (1..=i64::from(i32::MAX)).contains(&component.quantity)
+                && is_gid_with_numeric_id(&component.product_gid, "gid://shopify/Product/")
+                && !component.sku.trim().is_empty()
+                && !component.title.trim().is_empty()
+                && component
+                    .source_identity
+                    .as_deref()
+                    .is_some_and(|value| !value.trim().is_empty())
+                && component.audit_provenance.as_ref().is_some_and(|value| {
+                    !value.source_system.trim().is_empty()
+                        && !value.source_bundle_id.trim().is_empty()
+                        && !value.source_record_checksum.trim().is_empty()
+                })
+        });
+    (is_v1 || is_v2)
         && projection.checksum_algorithm == "fnv1a-32"
         && is_uuid(&projection.bundle_definition_id)
         && is_uuid(&projection.published_revision_id)
@@ -343,25 +408,79 @@ fn projection_checksum_matches(projection: &Projection) -> bool {
         if index > 0 {
             canonical.push(',');
         }
-        canonical.push_str("{\"fixed_price_per_unit\":");
+        canonical.push('{');
+        if projection.schema_version == "prebuilt_bundle_expand_projection.v2" {
+            let provenance = component.audit_provenance.as_ref();
+            canonical.push_str("\"audit_provenance\":{\"source_bundle_id\":");
+            push_json_string(
+                &mut canonical,
+                provenance.map_or("", |value| value.source_bundle_id.as_str()),
+            );
+            canonical.push_str(",\"source_record_checksum\":");
+            push_json_string(
+                &mut canonical,
+                provenance.map_or("", |value| value.source_record_checksum.as_str()),
+            );
+            canonical.push_str(",\"source_system\":");
+            push_json_string(
+                &mut canonical,
+                provenance.map_or("", |value| value.source_system.as_str()),
+            );
+            canonical.push_str("},\"fixed_price_per_unit\":");
+        } else {
+            canonical.push_str("\"fixed_price_per_unit\":");
+        }
         push_json_string(&mut canonical, &component.fixed_price_per_unit);
         canonical.push_str(",\"group\":");
         push_json_string(&mut canonical, &component.group);
         canonical.push_str(",\"product_gid\":");
         push_json_string(&mut canonical, &component.product_gid);
+        if projection.schema_version == "prebuilt_bundle_expand_projection.v2" {
+            canonical.push_str(",\"quantity\":");
+            canonical.push_str(&component.quantity.to_string());
+        }
         canonical.push_str(",\"role\":");
         push_json_string(&mut canonical, &component.role);
         canonical.push_str(",\"sequence\":");
         canonical.push_str(&component.sequence.to_string());
         canonical.push_str(",\"sku\":");
         push_json_string(&mut canonical, &component.sku);
+        if projection.schema_version == "prebuilt_bundle_expand_projection.v2" {
+            canonical.push_str(",\"source_identity\":");
+            push_json_string(
+                &mut canonical,
+                component.source_identity.as_deref().unwrap_or_default(),
+            );
+        }
         canonical.push_str(",\"title\":");
         push_json_string(&mut canonical, &component.title);
         canonical.push_str(",\"variant_gid\":");
         push_json_string(&mut canonical, &component.variant_gid);
         canonical.push('}');
     }
-    canonical.push_str("],\"parent\":{\"product_gid\":");
+    canonical.push(']');
+    if projection.schema_version == "prebuilt_bundle_expand_projection.v2" {
+        canonical.push_str(",\"contract_identity\":");
+        push_json_string(
+            &mut canonical,
+            projection.contract_identity.as_deref().unwrap_or_default(),
+        );
+    }
+    canonical.push_str(",\"parent\":{");
+    if projection.schema_version == "prebuilt_bundle_expand_projection.v2" {
+        canonical.push_str("\"fixed_price_per_unit\":");
+        push_json_string(
+            &mut canonical,
+            projection
+                .parent
+                .fixed_price_per_unit
+                .as_deref()
+                .unwrap_or_default(),
+        );
+        canonical.push_str(",\"product_gid\":");
+    } else {
+        canonical.push_str("\"product_gid\":");
+    }
     push_json_string(&mut canonical, &projection.parent.product_gid);
     canonical.push_str(",\"sku\":");
     push_json_string(&mut canonical, &projection.parent.sku);
@@ -446,32 +565,44 @@ fn projection_json_for_line(line: &schema::run::input::cart::Lines) -> Option<&J
 
 fn parse_projection(value: &JsonValue) -> Option<Projection> {
     let object = json_object(value)?;
+    let schema_version = json_string(object, "schema_version")?.to_string();
+    let is_v2 = schema_version == "prebuilt_bundle_expand_projection.v2";
     Some(Projection {
-        schema_version: json_string(object, "schema_version")?.to_string(),
+        schema_version,
+        contract_identity: if is_v2 {
+            Some(json_string(object, "contract_identity")?.to_string())
+        } else {
+            None
+        },
         checksum_algorithm: json_string(object, "checksum_algorithm")?.to_string(),
         bundle_definition_id: json_string(object, "bundle_definition_id")?.to_string(),
         published_revision_id: json_string(object, "published_revision_id")?.to_string(),
         source_snapshot_checksum: json_string(object, "source_snapshot_checksum")?.to_string(),
-        parent: parse_projection_parent(object.get("parent")?)?,
+        parent: parse_projection_parent(object.get("parent")?, is_v2)?,
         components: json_array(object, "components")?
             .iter()
-            .map(parse_projection_component)
+            .map(|component| parse_projection_component(component, is_v2))
             .collect::<Option<Vec<_>>>()?,
         checksum: json_string(object, "checksum")?.to_string(),
     })
 }
 
-fn parse_projection_parent(value: &JsonValue) -> Option<ProjectionParent> {
+fn parse_projection_parent(value: &JsonValue, is_v2: bool) -> Option<ProjectionParent> {
     let object = json_object(value)?;
     Some(ProjectionParent {
         product_gid: json_string(object, "product_gid")?.to_string(),
         variant_gid: json_string(object, "variant_gid")?.to_string(),
         sku: json_string(object, "sku")?.to_string(),
         title: json_string(object, "title")?.to_string(),
+        fixed_price_per_unit: if is_v2 {
+            Some(json_string(object, "fixed_price_per_unit")?.to_string())
+        } else {
+            None
+        },
     })
 }
 
-fn parse_projection_component(value: &JsonValue) -> Option<ProjectionComponent> {
+fn parse_projection_component(value: &JsonValue, is_v2: bool) -> Option<ProjectionComponent> {
     let object = json_object(value)?;
     Some(ProjectionComponent {
         sequence: json_i64(object, "sequence")?,
@@ -482,6 +613,35 @@ fn parse_projection_component(value: &JsonValue) -> Option<ProjectionComponent> 
         sku: json_string(object, "sku")?.to_string(),
         title: json_string(object, "title")?.to_string(),
         fixed_price_per_unit: json_string(object, "fixed_price_per_unit")?.to_string(),
+        quantity: if is_v2 {
+            json_i64(object, "quantity")?
+        } else {
+            1
+        },
+        source_identity: if is_v2 {
+            Some(json_string(object, "source_identity")?.to_string())
+        } else {
+            None
+        },
+        audit_provenance: if is_v2 {
+            Some(parse_projection_audit_provenance(
+                object.get("audit_provenance")?,
+            )?)
+        } else {
+            None
+        },
+    })
+}
+
+fn parse_projection_audit_provenance(value: &JsonValue) -> Option<ProjectionAuditProvenance> {
+    let object = json_object(value)?;
+    if object.len() != 3 {
+        return None;
+    }
+    Some(ProjectionAuditProvenance {
+        source_system: json_string(object, "source_system")?.to_string(),
+        source_bundle_id: json_string(object, "source_bundle_id")?.to_string(),
+        source_record_checksum: json_string(object, "source_record_checksum")?.to_string(),
     })
 }
 
@@ -546,6 +706,18 @@ fn decimal_cents(value: &str) -> Option<i64> {
         .checked_add(fraction.parse::<i64>().ok()?)
 }
 
+fn decimal_cents_v2(value: &str) -> Option<i64> {
+    let (whole, _) = value.split_once('.')?;
+    if whole.len() > 1 && whole.starts_with('0') {
+        return None;
+    }
+    decimal_cents(value).filter(|minor_units| *minor_units <= 9_007_199_254_740_991)
+}
+
+fn decimal_cents_safe(value: &str) -> Option<i64> {
+    decimal_cents(value).filter(|minor_units| *minor_units <= 9_007_199_254_740_991)
+}
+
 fn build_expand(
     line: &schema::run::input::cart::Lines,
     metadata: &BundleMetadata<'_>,
@@ -577,7 +749,7 @@ fn build_expand(
                     },
                 ),
             }),
-            quantity: 1,
+            quantity: i32::try_from(component.quantity).expect("validated component quantity"),
         })
         .collect();
 
@@ -694,6 +866,60 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn valid_quantity_v2_expands_physical_quantities() -> Result<()> {
+        let result = run_function_with_input(
+            run,
+            include_str!("../tests/fixtures/valid-quantity-v2.json"),
+        )?;
+
+        assert_eq!(result.operations.len(), 1);
+        let schema::CartOperation::Expand(expand) = &result.operations[0] else {
+            panic!("expected expand operation");
+        };
+        assert_eq!(
+            expand.cart_line_id,
+            "gid://shopify/CartLine/prebuilt-quantity-v2"
+        );
+        assert_eq!(expand.expanded_cart_items.len(), 3);
+        assert_eq!(
+            expand
+                .expanded_cart_items
+                .iter()
+                .map(|item| item.quantity)
+                .collect::<Vec<_>>(),
+            vec![2, 4, 8]
+        );
+        assert_eq!(expanded_prices(expand), vec![1.25, 2.0, 0.5]);
+        Ok(())
+    }
+
+    #[test]
+    fn quantity_v2_price_mismatch_fails_closed() -> Result<()> {
+        let input = include_str!("../tests/fixtures/valid-quantity-v2.json")
+            .replace("\"amount\": \"14.50\"", "\"amount\": \"14.51\"");
+
+        assert_no_operations(&input)
+    }
+
+    #[test]
+    fn quantity_v2_non_positive_quantity_fails_closed_with_matching_checksum() -> Result<()> {
+        let input = include_str!("../tests/fixtures/valid-quantity-v2.json")
+            .replacen("\"quantity\": 2", "\"quantity\": 0", 1)
+            .replace("\"checksum\": \"fc699c6c\"", "\"checksum\": \"39b02e36\"");
+
+        assert_no_operations(&input)
+    }
+
+    #[test]
+    fn quantity_v2_output_overflow_fails_closed_with_matching_checksum() -> Result<()> {
+        let input = include_str!("../tests/fixtures/valid-quantity-v2.json")
+            .replacen("\"quantity\": 2", "\"quantity\": 2147483648", 1)
+            .replace("\"checksum\": \"fc699c6c\"", "\"checksum\": \"6110f0bb\"");
+
+        assert_no_operations(&input)
     }
 
     #[test]

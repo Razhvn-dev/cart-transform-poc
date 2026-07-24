@@ -1,0 +1,531 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aces.example/schemas/prebuilt-bundle-pilot-acceptance.v2.schema.json",
+  "title": "Pre-built Bundle Pilot Acceptance Evidence V2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "projection",
+    "publication_evidence",
+    "pilot_scope",
+    "evidence"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "prebuilt_bundle_pilot_acceptance.v2"
+    },
+    "projection": {
+      "$ref": "#/$defs/projection"
+    },
+    "publication_evidence": {
+      "$ref": "#/$defs/publicationEvidence"
+    },
+    "pilot_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "store_domain",
+        "product_series_key",
+        "projection_schema_version",
+        "projection_contract_identity",
+        "projection_checksum",
+        "parent_variant_gid",
+        "parent_total_minor_units",
+        "expected_components",
+        "bundle_instance_ids"
+      ],
+      "properties": {
+        "store_domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "product_series_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projection_schema_version": {
+          "const": "prebuilt_bundle_expand_projection.v2"
+        },
+        "projection_contract_identity": {
+          "const": "prebuilt_bundle_expand_projection.v2"
+        },
+        "projection_checksum": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent_variant_gid": {
+          "$ref": "#/$defs/productVariantGid"
+        },
+        "parent_total_minor_units": {
+          "$ref": "#/$defs/nonNegativeSafeInteger"
+        },
+        "expected_components": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Exact duplicates are rejected by JSON Schema; runtime validation additionally requires variant_gid uniqueness.",
+          "items": {
+            "$ref": "#/$defs/projectedComponent"
+          }
+        },
+        "bundle_instance_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Every value is a unique per-Cart-instance UUID.",
+          "items": {
+            "$ref": "#/$defs/uuid"
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cart", "checkout", "order", "inventory"],
+      "properties": {
+        "cart": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["instances"],
+          "properties": {
+            "instances": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "description": "Runtime validation requires one record per unique bundle_instance_id.",
+              "items": {
+                "$ref": "#/$defs/cartInstance"
+              }
+            }
+          }
+        },
+        "checkout": {
+          "$ref": "#/$defs/expandedEvidence"
+        },
+        "order": {
+          "$ref": "#/$defs/expandedEvidence"
+        },
+        "inventory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["parent_variant_gid", "parent_delta", "component_deltas"],
+          "properties": {
+            "parent_variant_gid": {
+              "$ref": "#/$defs/productVariantGid"
+            },
+            "parent_delta": {
+              "$ref": "#/$defs/safeInteger"
+            },
+            "component_deltas": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "description": "Runtime validation additionally requires variant_gid uniqueness.",
+              "items": {
+                "$ref": "#/$defs/componentDelta"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "productGid": {
+      "type": "string",
+      "pattern": "^gid://shopify/Product/[0-9]+$"
+    },
+    "productVariantGid": {
+      "type": "string",
+      "pattern": "^gid://shopify/ProductVariant/[0-9]+$"
+    },
+    "positiveI32": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "safeInteger": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "nonNegativeSafeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "moneyDecimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.[0-9]{2}$"
+    },
+    "projectedComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "variant_gid",
+        "quantity",
+        "fixed_price_per_unit_minor_units"
+      ],
+      "properties": {
+        "variant_gid": {
+          "$ref": "#/$defs/productVariantGid"
+        },
+        "quantity": {
+          "$ref": "#/$defs/positiveI32"
+        },
+        "fixed_price_per_unit_minor_units": {
+          "$ref": "#/$defs/nonNegativeSafeInteger"
+        }
+      }
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "contract_identity",
+        "checksum_algorithm",
+        "bundle_definition_id",
+        "published_revision_id",
+        "source_snapshot_checksum",
+        "parent",
+        "components",
+        "checksum"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "prebuilt_bundle_expand_projection.v2"
+        },
+        "contract_identity": {
+          "const": "prebuilt_bundle_expand_projection.v2"
+        },
+        "checksum_algorithm": {
+          "const": "fnv1a-32"
+        },
+        "bundle_definition_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "published_revision_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "source_snapshot_checksum": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent": {
+          "$ref": "#/$defs/projectionParent"
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Runtime validation additionally requires variant_gid uniqueness and contiguous sequence.",
+          "items": {
+            "$ref": "#/$defs/projectionComponent"
+          }
+        },
+        "checksum": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "projectionParent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "product_gid",
+        "variant_gid",
+        "sku",
+        "title",
+        "fixed_price_per_unit"
+      ],
+      "properties": {
+        "product_gid": {
+          "$ref": "#/$defs/productGid"
+        },
+        "variant_gid": {
+          "$ref": "#/$defs/productVariantGid"
+        },
+        "sku": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fixed_price_per_unit": {
+          "$ref": "#/$defs/moneyDecimal"
+        }
+      }
+    },
+    "projectionComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "group",
+        "role",
+        "product_gid",
+        "variant_gid",
+        "sku",
+        "title",
+        "quantity",
+        "fixed_price_per_unit",
+        "source_identity",
+        "audit_provenance"
+      ],
+      "properties": {
+        "sequence": {
+          "$ref": "#/$defs/positiveI32"
+        },
+        "group": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "product_gid": {
+          "$ref": "#/$defs/productGid"
+        },
+        "variant_gid": {
+          "$ref": "#/$defs/productVariantGid"
+        },
+        "sku": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "quantity": {
+          "$ref": "#/$defs/positiveI32"
+        },
+        "fixed_price_per_unit": {
+          "$ref": "#/$defs/moneyDecimal"
+        },
+        "source_identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "audit_provenance": {
+          "$ref": "#/$defs/auditProvenance"
+        }
+      }
+    },
+    "auditProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_system",
+        "source_bundle_id",
+        "source_record_checksum"
+      ],
+      "properties": {
+        "source_system": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_bundle_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_record_checksum": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "publicationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "contract_identity",
+        "projection_schema_version",
+        "projection_contract_identity",
+        "checksum_algorithm",
+        "bundle_definition_id",
+        "published_revision_id",
+        "source_snapshot_checksum",
+        "projection_checksum",
+        "parent_variant_gid",
+        "parent_total_minor_units",
+        "components"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "prebuilt_projection_publication_evidence.v2"
+        },
+        "contract_identity": {
+          "const": "prebuilt_projection_publication_evidence.v2"
+        },
+        "projection_schema_version": {
+          "const": "prebuilt_bundle_expand_projection.v2"
+        },
+        "projection_contract_identity": {
+          "const": "prebuilt_bundle_expand_projection.v2"
+        },
+        "checksum_algorithm": {
+          "const": "fnv1a-32"
+        },
+        "bundle_definition_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "published_revision_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "source_snapshot_checksum": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projection_checksum": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent_variant_gid": {
+          "$ref": "#/$defs/productVariantGid"
+        },
+        "parent_total_minor_units": {
+          "$ref": "#/$defs/nonNegativeSafeInteger"
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Runtime validation additionally requires variant_gid uniqueness and exact Projection order.",
+          "items": {
+            "$ref": "#/$defs/publicationComponent"
+          }
+        }
+      }
+    },
+    "publicationComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "variant_gid",
+        "quantity",
+        "fixed_price_per_unit_minor_units"
+      ],
+      "properties": {
+        "sequence": {
+          "$ref": "#/$defs/positiveI32"
+        },
+        "variant_gid": {
+          "$ref": "#/$defs/productVariantGid"
+        },
+        "quantity": {
+          "$ref": "#/$defs/positiveI32"
+        },
+        "fixed_price_per_unit_minor_units": {
+          "$ref": "#/$defs/nonNegativeSafeInteger"
+        }
+      }
+    },
+    "cartInstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundle_instance_id",
+        "parent_variant_gid",
+        "parent_line_count",
+        "parent_quantity",
+        "component_line_count",
+        "bundle_metadata_v1_present"
+      ],
+      "properties": {
+        "bundle_instance_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "parent_variant_gid": {
+          "$ref": "#/$defs/productVariantGid"
+        },
+        "parent_line_count": {
+          "const": 1
+        },
+        "parent_quantity": {
+          "const": 1
+        },
+        "component_line_count": {
+          "const": 0
+        },
+        "bundle_metadata_v1_present": {
+          "const": true
+        }
+      }
+    },
+    "expandedEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projection_checksum", "components", "total_minor_units"],
+      "properties": {
+        "projection_checksum": {
+          "type": "string",
+          "minLength": 1
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Exact duplicates are rejected by JSON Schema; runtime validation additionally requires one exact component for each bundle_instance_id + variant_gid pair.",
+          "items": {
+            "$ref": "#/$defs/expandedComponent"
+          }
+        },
+        "total_minor_units": {
+          "$ref": "#/$defs/nonNegativeSafeInteger"
+        }
+      }
+    },
+    "expandedComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundle_instance_id",
+        "variant_gid",
+        "quantity",
+        "fixed_price_per_unit_minor_units"
+      ],
+      "properties": {
+        "bundle_instance_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "variant_gid": {
+          "$ref": "#/$defs/productVariantGid"
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "fixed_price_per_unit_minor_units": {
+          "$ref": "#/$defs/nonNegativeSafeInteger"
+        }
+      }
+    },
+    "componentDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["variant_gid", "delta"],
+      "properties": {
+        "variant_gid": {
+          "$ref": "#/$defs/productVariantGid"
+        },
+        "delta": {
+          "$ref": "#/$defs/safeInteger"
+        }
+      }
+    }
+  }
+}

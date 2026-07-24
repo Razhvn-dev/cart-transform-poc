@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { compileRuntimeSnapshot } from "./bundle-runtime.compiler.js";
 import { masterKitConfigV1 } from "./fixtures/master-kit-config.v1.js";
 import { compilePrebuiltBundleExpandProjection } from "./prebuilt-bundle-expand-projection.js";
+import { compilePrebuiltBundleExpandProjectionV2 } from "./prebuilt-bundle-expand-projection-v2.js";
 import { buildPrebuiltBundleProjectionFunctionCandidate } from "./prebuilt-bundle-projection.function-candidate.js";
 import { PREBUILT_BUNDLE_RUNTIME_MAPPING_SCHEMA_VERSION, resolvePrebuiltBundleSelection } from "./prebuilt-bundle-runtime.selection.js";
 import { run as runProjectionCandidate } from "../run.dev.prebuilt-projection-candidate.js";
@@ -30,23 +31,94 @@ function fixture() {
   };
 }
 
+function quantityFixture() {
+  return compilePrebuiltBundleExpandProjectionV2({
+    mapping: {
+      bundle_definition_id: "77770000-0000-4000-8000-000000000011",
+      published_revision_id: "77770000-0000-4000-8000-000000000012",
+      snapshot_checksum: "quantity-v2-snapshot",
+    },
+    resolved_candidate: {
+      parent: {
+        product_gid: "gid://shopify/Product/100",
+        variant_gid: "gid://shopify/ProductVariant/200",
+        sku: "BUNDLE-100",
+        title: "Bundle 100",
+      },
+      components: [
+        {
+          sequence: 1,
+          componentGroup: "group-1",
+          componentRole: "role-1",
+          productId: "gid://shopify/Product/101",
+          variantId: "gid://shopify/ProductVariant/201",
+          sku: "PART-1",
+          title: "Part 1",
+          quantity: 2,
+          fixedPricePerUnit: "1.25",
+          sourceIdentity: "bundles-app:bundle-100:component-1",
+          auditProvenance: {
+            sourceSystem: "bundles-app",
+            sourceBundleId: "bundle-100",
+            sourceRecordChecksum: "record-checksum-100",
+          },
+        },
+        {
+          sequence: 2,
+          componentGroup: "group-2",
+          componentRole: "role-2",
+          productId: "gid://shopify/Product/102",
+          variantId: "gid://shopify/ProductVariant/202",
+          sku: "PART-2",
+          title: "Part 2",
+          quantity: 4,
+          fixedPricePerUnit: "2.00",
+          sourceIdentity: "bundles-app:bundle-100:component-2",
+          auditProvenance: {
+            sourceSystem: "bundles-app",
+            sourceBundleId: "bundle-100",
+            sourceRecordChecksum: "record-checksum-100",
+          },
+        },
+        {
+          sequence: 3,
+          componentGroup: "group-3",
+          componentRole: "role-3",
+          productId: "gid://shopify/Product/103",
+          variantId: "gid://shopify/ProductVariant/203",
+          sku: "PART-3",
+          title: "Part 3",
+          quantity: 8,
+          fixedPricePerUnit: "0.50",
+          sourceIdentity: "bundles-app:bundle-100:component-3",
+          auditProvenance: {
+            sourceSystem: "bundles-app",
+            sourceBundleId: "bundle-100",
+            sourceRecordChecksum: "record-checksum-100",
+          },
+        },
+      ],
+    },
+    parent_fixed_price_per_unit: "14.50",
+  }).projection;
+}
+
 function line({ id = "gid://shopify/CartLine/prebuilt", bundleId = "906ec234-e2b5-4bc9-a13f-a2dfedfa7694", projection = fixture().projection } = {}) {
-  const { snapshot } = fixture();
   return {
     id,
     quantity: 1,
     cost: { amountPerQuantity: { amount: projectionTotal(projection) } },
     bundleId: { value: bundleId },
     bundleSchemaVersion: { value: "1" },
-    parentProductGid: { value: snapshot.parent.product_gid },
-    parentVariantGid: { value: snapshot.parent.variant_gid },
-    parentSku: { value: snapshot.parent.sku },
-    parentTitle: { value: snapshot.parent.title },
+    parentProductGid: { value: projection.parent.product_gid },
+    parentVariantGid: { value: projection.parent.variant_gid },
+    parentSku: { value: projection.parent.sku },
+    parentTitle: { value: projection.parent.title },
     merchandise: {
       __typename: "ProductVariant",
-      id: snapshot.parent.variant_gid,
+      id: projection.parent.variant_gid,
       product: {
-        id: snapshot.parent.product_gid,
+        id: projection.parent.product_gid,
         prebuiltExpandProjectionMetafield: { jsonValue: projection },
       },
     },
@@ -55,7 +127,8 @@ function line({ id = "gid://shopify/CartLine/prebuilt", bundleId = "906ec234-e2b
 
 function projectionTotal(projection) {
   const cents = projection.components.reduce(
-    (total, component) => total + Math.round(Number(component.fixed_price_per_unit) * 100),
+    (total, component) => total
+      + (Math.round(Number(component.fixed_price_per_unit) * 100) * (component.quantity ?? 1)),
     0,
   );
   return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`;
@@ -135,5 +208,45 @@ describe("pre-built projection Function candidate", () => {
       "gid://shopify/CartLine/prebuilt",
     ]);
     expect(result.operations.map((operation) => operation.expand.expandedCartItems.length)).toEqual([3, 3]);
+  });
+
+  it("emits V2 physical quantities and per-unit prices", () => {
+    const projection = quantityFixture();
+    const candidate = buildPrebuiltBundleProjectionFunctionCandidate({
+      cart: { lines: [line({ projection })] },
+    });
+
+    expect(candidate.status).toBe("ready");
+    expect(candidate.result.operations[0].expand.expandedCartItems.map((item) => ({
+      merchandiseId: item.merchandiseId,
+      quantity: item.quantity,
+      amount: item.price.adjustment.fixedPricePerUnit.amount,
+    }))).toEqual([
+      { merchandiseId: "gid://shopify/ProductVariant/201", quantity: 2, amount: "1.25" },
+      { merchandiseId: "gid://shopify/ProductVariant/202", quantity: 4, amount: "2.00" },
+      { merchandiseId: "gid://shopify/ProductVariant/203", quantity: 8, amount: "0.50" },
+    ]);
+  });
+
+  it("keeps repeated-quantity bundle instances independent", () => {
+    const projection = quantityFixture();
+    const candidate = buildPrebuiltBundleProjectionFunctionCandidate({
+      cart: {
+        lines: [
+          line({ projection }),
+          line({
+            id: "gid://shopify/CartLine/prebuilt-2",
+            bundleId: "906ec234-e2b5-4bc9-a13f-a2dfedfa7695",
+            projection,
+          }),
+        ],
+      },
+    });
+
+    expect(candidate.status).toBe("ready");
+    expect(candidate.result.operations).toHaveLength(2);
+    expect(candidate.result.operations.map(({ expand }) => (
+      expand.expandedCartItems.map(({ quantity }) => quantity)
+    ))).toEqual([[2, 4, 8], [2, 4, 8]]);
   });
 });

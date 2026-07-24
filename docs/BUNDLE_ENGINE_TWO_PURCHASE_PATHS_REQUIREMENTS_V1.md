@@ -86,3 +86,28 @@ is local and read-only and does not retrieve Shopify data or place an order.
 V5.4 production runtime remains the hard-coded Shared Core. Implementing generic pre-built SKU expansion is a future runtime capability and must be designed, validated, and approved separately before it can affect a live store.
 
 The import and pilot requirements define the desired migration outcome; they do not themselves authorize source-app access, Shopify writes, deployment, or a live-store switch.
+
+## Josh-confirmed Product Rules — 2026-07-24
+
+These decisions are confirmed product input for the next design and
+implementation phase:
+
+1. **Partial refunds:** a customer may return and refund an individual component
+   or one unit from a repeated component quantity. Only the returned component
+   quantity is eligible to be restored to inventory.
+2. **Supplier and Shopify Collective presentation:** for now, the supplier sees
+   only the main Kit SKU and performs its own breakdown and shipment. This is
+   the current operating model.
+3. **Repeated component quantities:** `xN` is the actual number of physical
+   units that must be shipped.
+4. **Repeated-quantity pricing:** the listed component price is the price per
+   individual unit, not the combined price for all `N` units.
+5. **Repeated-quantity refunds:** when a component has quantity `N`, one unit
+   may be returned and refunded independently.
+
+The supplier-facing main-SKU presentation is a separate fulfillment view. It
+does not change the locked internal rule that Checkout and Orders expand into
+components and inventory is deducted from components only.
+
+These decisions do not amend the locked V5.4 SSOT, change the current runtime,
+activate a Function version, authorize Shopify writes, or approve a deployment.

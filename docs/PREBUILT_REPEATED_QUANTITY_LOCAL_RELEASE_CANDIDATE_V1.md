@@ -34,8 +34,14 @@ Date: 2026-07-24
 ## Runtime and release boundary
 
 - V5.4 remains the locked SSOT.
-- The last confirmed development runtime baseline remains v64; this local batch
-  did not re-read or mutate Shopify live state.
+- A read-only live check on 2026-07-24 confirmed
+  `cart-transform-poc-dev-64` remains active, versions v65-v67 remain inactive,
+  and the single Cart Transform registration still resolves to `Master Kit
+  Expand`.
+- Because v67 already exists and Shopify versions are immutable, the repeated
+  quantity candidate is assigned to `cart-transform-poc-dev-68`. Its activation
+  remains fail-closed until an inactive v68 deployment is read back and its
+  Version ID plus staged Wasm fingerprint are separately sealed.
 - No commit, push, Function deployment, activation, registration change, product
   write, inventory write, order, refund, or production action was performed.
 

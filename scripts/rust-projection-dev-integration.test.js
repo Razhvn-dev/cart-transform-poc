@@ -50,9 +50,11 @@ describe("Rust hybrid development integration contract", () => {
       clientId: "d25c62f609855572f3f266765d105ebb",
       store: "huang-mvqquz1p.myshopify.com",
       baselineVersion: "cart-transform-poc-dev-64",
-      candidateVersion: "cart-transform-poc-dev-67",
+      previousCandidateVersion: "cart-transform-poc-dev-67",
+      candidateVersion: "cart-transform-poc-dev-68",
       rejectedCandidateVersion: "cart-transform-poc-dev-66",
-      candidateMessage: "rust-hybrid-live-identity-candidate",
+      candidateMessage: "rust-hybrid-quantity-v2-candidate",
+      activationSealed: false,
       registrationId: "gid://shopify/CartTransform/136675606",
       functionId: "019f5e8c-0374-7577-b756-66af47a751be",
       functionHandle: "master-kit-expand",
@@ -60,18 +62,21 @@ describe("Rust hybrid development integration contract", () => {
     }));
   });
 
-  test("explicitly rejects v66 as a deployable or activatable candidate", () => {
+  test("deploys only v68 and keeps v66/v67 inactive", () => {
     expect(() => assertDeployableCandidateVersion(
       "cart-transform-poc-dev-66",
     )).toThrow(/v66|cart-transform-poc-dev-66/i);
     expect(() => assertDeployableCandidateVersion(
       "cart-transform-poc-dev-67",
+    )).toThrow(/v68|cart-transform-poc-dev-68/i);
+    expect(() => assertDeployableCandidateVersion(
+      "cart-transform-poc-dev-68",
     )).not.toThrow();
 
     expect(() => assertInactiveCandidateState(stateWithVersions([
       { versionTag: TARGET.baselineVersion, status: "active" },
       { versionTag: TARGET.rejectedCandidateVersion, status: "inactive" },
-    ]))).toThrow(/cart-transform-poc-dev-67/i);
+    ]))).toThrow(/cart-transform-poc-dev-68/i);
 
     expect(() => assertActiveCandidateState(stateWithVersions([
       { versionTag: TARGET.rejectedCandidateVersion, status: "active" },
@@ -92,10 +97,12 @@ describe("Rust hybrid development integration contract", () => {
     })).toThrow(/development app identity/i);
   });
 
-  test("requires v67 to be absent before inactive deployment", () => {
+  test("requires v68 to be absent and v67 to remain inactive before deployment", () => {
     const state = stateWithVersions([
       { versionTag: TARGET.baselineVersion, status: "active" },
       { versionTag: "cart-transform-poc-dev-65", status: "inactive" },
+      { versionTag: TARGET.rejectedCandidateVersion, status: "inactive" },
+      { versionTag: TARGET.previousCandidateVersion, status: "inactive" },
     ]);
     expect(() => assertPreflightState(state)).not.toThrow();
     expect(() => assertPreflightState({
@@ -105,6 +112,14 @@ describe("Rust hybrid development integration contract", () => {
         { versionTag: TARGET.candidateVersion, status: "inactive" },
       ],
     })).toThrow(/already exists/i);
+    expect(() => assertPreflightState({
+      ...state,
+      versions: state.versions.map((version) => (
+        version.versionTag === TARGET.previousCandidateVersion
+          ? { ...version, status: "active" }
+          : version
+      )),
+    })).toThrow(/v67|cart-transform-poc-dev-67/i);
   });
 
   test("validates inactive, active, and recovered boundaries with stable registration", () => {
@@ -175,7 +190,8 @@ describe("Rust hybrid development integration contract", () => {
   test("defaults to dry-run and enforces one explicit execution mode", () => {
     expect(executionMode([])).toBe("dry-run");
     expect(executionMode(["--deploy-inactive"])).toBe("deploy-inactive");
-    expect(executionMode(["--activate-candidate"])).toBe("activate-candidate");
+    expect(() => executionMode(["--activate-candidate"]))
+      .toThrow(/v68 activation.*not sealed/i);
     expect(executionMode(["--recover-v64"])).toBe("recover-v64");
     expect(() => executionMode(["--force"])).toThrow(/unknown argument/i);
     expect(() => executionMode([
@@ -231,7 +247,7 @@ describe("Rust hybrid development integration contract", () => {
     expect(commands.deployInactive).toEqual(expect.arrayContaining([
       "app", "deploy", "--no-release", "--version", TARGET.candidateVersion,
     ]));
-    expect(commands.deployInactive).toContain("rust-hybrid-live-identity-candidate");
+    expect(commands.deployInactive).toContain(TARGET.candidateMessage);
     expect(commands.deployInactive).not.toContain(TARGET.rejectedCandidateVersion);
     expect(commands.deployInactive).not.toContain("--allow-updates");
     expect(commands.activateCandidate).toEqual([

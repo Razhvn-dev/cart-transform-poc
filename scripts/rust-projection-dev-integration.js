@@ -9,9 +9,11 @@ export const TARGET = Object.freeze({
   store: "huang-mvqquz1p.myshopify.com",
   apiVersion: "2026-04",
   baselineVersion: "cart-transform-poc-dev-64",
-  candidateVersion: "cart-transform-poc-dev-67",
+  previousCandidateVersion: "cart-transform-poc-dev-67",
+  candidateVersion: "cart-transform-poc-dev-68",
   rejectedCandidateVersion: "cart-transform-poc-dev-66",
-  candidateMessage: "rust-hybrid-live-identity-candidate",
+  candidateMessage: "rust-hybrid-quantity-v2-candidate",
+  activationSealed: false,
   registrationId: "gid://shopify/CartTransform/136675606",
   functionId: "019f5e8c-0374-7577-b756-66af47a751be",
   functionHandle: "master-kit-expand",
@@ -48,8 +50,13 @@ export function assertDeployableCandidateVersion(versionTag) {
 }
 
 function assertRejectedCandidateInactive(versions) {
-  if (versionWithStatus(versions, TARGET.rejectedCandidateVersion, "active")) {
-    throw new Error(`${TARGET.rejectedCandidateVersion} must remain inactive.`);
+  for (const versionTag of [
+    TARGET.rejectedCandidateVersion,
+    TARGET.previousCandidateVersion,
+  ]) {
+    if (versionWithStatus(versions, versionTag, "active")) {
+      throw new Error(`${versionTag} must remain inactive.`);
+    }
   }
 }
 
@@ -197,7 +204,13 @@ export function executionMode(args) {
   if (args.length > 1) {
     throw new Error("Execution modes are mutually exclusive.");
   }
-  return args.length === 0 ? "dry-run" : modes[args[0]];
+  const mode = args.length === 0 ? "dry-run" : modes[args[0]];
+  if (mode === "activate-candidate" && !TARGET.activationSealed) {
+    throw new Error(
+      "v68 activation is not sealed; deploy and read back the inactive candidate first.",
+    );
+  }
+  return mode;
 }
 
 export function executeModeSetup({ mode, prepareCandidate }) {

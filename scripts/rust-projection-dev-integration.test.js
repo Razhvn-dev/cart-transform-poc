@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { posix, resolve, win32 } from "node:path";
 
 import { describe, expect, test, vi } from "vitest";
@@ -313,6 +314,59 @@ describe("Rust hybrid development integration contract", () => {
       sizeBytes: 108_602,
       sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
+  });
+
+  test("accepts Shopify-transformed Wasm only with fresh source-copy provenance", () => {
+    const sourceWasm = Buffer.alloc(113_274, 1);
+    const stagedWasm = Buffer.alloc(113_274, 2);
+    const fingerprint = (bytes) => ({
+      sizeBytes: bytes.length,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    });
+
+    expect(inspectStagedWasmArtifact({
+      sourceWasm,
+      stagedWasm,
+      expectedInvocationId: "build-123",
+      buildProvenance: {
+        schemaVersion: "rust_projection_build_provenance.v1",
+        invocationId: "build-123",
+        sourceWasm: fingerprint(sourceWasm),
+        copiedWasm: fingerprint(sourceWasm),
+      },
+    })).toEqual(fingerprint(stagedWasm));
+  });
+
+  test("rejects transformed Wasm with stale invocation or source provenance", () => {
+    const sourceWasm = Buffer.alloc(113_274, 1);
+    const stagedWasm = Buffer.alloc(113_274, 2);
+    const fingerprint = (bytes) => ({
+      sizeBytes: bytes.length,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    });
+    const buildProvenance = {
+      schemaVersion: "rust_projection_build_provenance.v1",
+      invocationId: "old-build",
+      sourceWasm: fingerprint(sourceWasm),
+      copiedWasm: fingerprint(sourceWasm),
+    };
+
+    expect(() => inspectStagedWasmArtifact({
+      sourceWasm,
+      stagedWasm,
+      expectedInvocationId: "current-build",
+      buildProvenance,
+    })).toThrow(/invocation/i);
+
+    expect(() => inspectStagedWasmArtifact({
+      sourceWasm,
+      stagedWasm,
+      expectedInvocationId: "old-build",
+      buildProvenance: {
+        ...buildProvenance,
+        sourceWasm: fingerprint(Buffer.alloc(113_274, 3)),
+      },
+    })).toThrow(/source.*fingerprint/i);
   });
 
   test("inactive deployment performs no release and verifies the full post-write state", () => {

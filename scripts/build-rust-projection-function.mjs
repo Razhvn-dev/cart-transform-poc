@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  copyFileSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { isPathInside } from "./path-boundary.js";
 
@@ -38,7 +44,25 @@ if (execution.status !== 0) throw commandError(execution, "Rust release build fa
 
 mkdirSync(dirname(outputWasm), { recursive: true });
 copyFileSync(sourceWasm, outputWasm);
-console.log(JSON.stringify({ sourceWasm, outputWasm }, null, 2));
+const fingerprint = (path) => {
+  const content = readFileSync(path);
+  return {
+    sizeBytes: content.length,
+    sha256: createHash("sha256").update(content).digest("hex"),
+  };
+};
+const buildProvenance = {
+  schemaVersion: "rust_projection_build_provenance.v1",
+  invocationId: process.env.ACES_RUST_BUILD_INVOCATION_ID || null,
+  sourceWasm: fingerprint(sourceWasm),
+  copiedWasm: fingerprint(outputWasm),
+};
+writeFileSync(
+  `${outputWasm}.provenance.json`,
+  `${JSON.stringify(buildProvenance, null, 2)}\n`,
+  "utf8",
+);
+console.log(JSON.stringify({ sourceWasm, outputWasm, buildProvenance }, null, 2));
 
 function msvcEnvironment() {
   if (process.platform !== "win32") return process.env;

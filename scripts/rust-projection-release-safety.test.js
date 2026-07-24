@@ -42,6 +42,23 @@ describe("Rust projection release safety", () => {
     );
   });
 
+  test("binds Shopify-transformed Wasm to one fresh Rust build invocation", () => {
+    const buildRunner = readFileSync(
+      resolve(root, "scripts/build-rust-projection-function.mjs"),
+      "utf8",
+    );
+    const deployRunner = readFileSync(
+      resolve(root, "scripts/deploy-dev-rust-projection.mjs"),
+      "utf8",
+    );
+
+    expect(buildRunner).toContain("rust_projection_build_provenance.v1");
+    expect(buildRunner).toContain("ACES_RUST_BUILD_INVOCATION_ID");
+    expect(deployRunner).toContain("randomUUID");
+    expect(deployRunner).toContain("expectedInvocationId");
+    expect(deployRunner).toContain("buildProvenance");
+  });
+
   test("binds v67 activation to the approved Version ID and Wasm fingerprint", () => {
     const deployRunner = readFileSync(
       resolve(root, "scripts/deploy-dev-rust-projection.mjs"),

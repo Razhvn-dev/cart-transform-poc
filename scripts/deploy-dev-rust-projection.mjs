@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -30,6 +31,7 @@ if (mode !== "recover-v64") {
 }
 const commands = deploymentCommands();
 const stagingPaths = resolveStagingPaths(root);
+let buildInvocationId = null;
 
 executeModeSetup({
   mode,
@@ -40,7 +42,11 @@ executeModeSetup({
       runRustTests();
       runNode(["scripts/check-prebuilt-projection-rust-spike.mjs"]);
       runNode(["scripts/assert-production-function-clean.mjs"]);
-      runCli(commands.buildStagedApp, true);
+      buildInvocationId = randomUUID();
+      runCli(commands.buildStagedApp, true, {
+        ...process.env,
+        ACES_RUST_BUILD_INVOCATION_ID: buildInvocationId,
+      });
     }
     const configValidation = runCliJson([
       "app", "config", "validate", "--config", TARGET.appConfig, "--json",
@@ -60,6 +66,11 @@ if (mode === "dry-run" || mode === "deploy-inactive") {
       "extensions/master-kit-expand-rust-spike/target/wasm32-unknown-unknown/release/master-kit-expand-rust-spike.wasm",
     )),
     stagedWasm: readFileSync(stagingPaths.wasm),
+    expectedInvocationId: buildInvocationId,
+    buildProvenance: JSON.parse(readFileSync(
+      `${stagingPaths.wasm}.provenance.json`,
+      "utf8",
+    )),
   });
   const stateBefore = readState();
   assertPreflightState(stateBefore);
@@ -180,8 +191,8 @@ function runNodeJson(args) {
   return JSON.parse(runCommand(process.execPath, args).stdout);
 }
 
-function runCli(args, inherit = false) {
-  return runCommand(process.execPath, [cli, ...args], { inherit });
+function runCli(args, inherit = false, environment = process.env) {
+  return runCommand(process.execPath, [cli, ...args], { inherit, environment });
 }
 
 function runCliJson(args) {

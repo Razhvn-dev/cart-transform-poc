@@ -289,13 +289,49 @@ export function deploymentCommands() {
   });
 }
 
-export function inspectStagedWasmArtifact({ sourceWasm, stagedWasm }) {
+export function inspectStagedWasmArtifact({
+  sourceWasm,
+  stagedWasm,
+  buildProvenance,
+  expectedInvocationId,
+}) {
   if (!Buffer.isBuffer(sourceWasm) || !Buffer.isBuffer(stagedWasm)) {
     throw new Error("Source and staged Wasm artifacts must be Buffers.");
   }
   const sha256 = (content) => createHash("sha256").update(content).digest("hex");
   const sourceSha256 = sha256(sourceWasm);
   const stagedSha256 = sha256(stagedWasm);
+  if (buildProvenance || expectedInvocationId) {
+    if (!buildProvenance || !expectedInvocationId) {
+      throw new Error("Transformed staged Wasm requires build provenance and an invocation ID.");
+    }
+    if (buildProvenance.schemaVersion !== "rust_projection_build_provenance.v1") {
+      throw new Error("Rust build provenance schema is invalid.");
+    }
+    if (buildProvenance.invocationId !== expectedInvocationId) {
+      throw new Error("Rust build provenance invocation does not match this build.");
+    }
+    const sourceFingerprint = {
+      sizeBytes: sourceWasm.length,
+      sha256: sourceSha256,
+    };
+    if (
+      buildProvenance.sourceWasm?.sizeBytes !== sourceFingerprint.sizeBytes
+      || buildProvenance.sourceWasm?.sha256 !== sourceFingerprint.sha256
+    ) {
+      throw new Error("Rust build provenance source fingerprint is stale.");
+    }
+    if (
+      buildProvenance.copiedWasm?.sizeBytes !== sourceFingerprint.sizeBytes
+      || buildProvenance.copiedWasm?.sha256 !== sourceFingerprint.sha256
+    ) {
+      throw new Error("Rust build provenance copied fingerprint does not match the source.");
+    }
+    return {
+      sizeBytes: stagedWasm.length,
+      sha256: stagedSha256,
+    };
+  }
   if (
     stagedWasm.length !== sourceWasm.length
     || stagedSha256 !== sourceSha256

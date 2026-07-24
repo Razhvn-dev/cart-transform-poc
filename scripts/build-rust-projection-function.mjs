@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { isPathInside } from "./path-boundary.js";
 
 const root = resolve(import.meta.dirname, "..");
 const crate = resolve(root, "extensions/master-kit-expand-rust-spike/Cargo.toml");
@@ -14,7 +15,7 @@ const output = outputIndex >= 0 ? process.argv[outputIndex + 1] : null;
 if (!output) throw new Error("Usage: build-rust-projection-function.mjs --output <wasm-path>");
 const outputWasm = resolve(process.cwd(), output);
 const stagingRoot = resolve(root, ".local/rust-projection-dev-integration");
-if (!outputWasm.startsWith(`${stagingRoot}\\`) && outputWasm !== stagingRoot) {
+if (!isPathInside({ root: stagingRoot, candidate: outputWasm })) {
   throw new Error(`Rust deployment output must stay inside ${stagingRoot}; received ${outputWasm}.`);
 }
 

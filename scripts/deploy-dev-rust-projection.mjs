@@ -4,9 +4,9 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import {
-  assertApprovedV67ActivationPreflight,
+  assertApprovedV68ActivationPreflight,
   fingerprintWasmArtifact,
-} from "./rust-projection-v67-activation-preflight.js";
+} from "./rust-projection-v68-activation-preflight.js";
 import {
   TARGET,
   assertDeployableCandidateVersion,
@@ -107,10 +107,10 @@ if (mode === "activate-candidate") {
   const stateBefore = readState();
   assertInactiveCandidateState(stateBefore);
   const approvedCandidate = JSON.parse(readFileSync(
-    resolve(root, "scripts/rust-projection-v67-approved-candidate.json"),
+    resolve(root, "scripts/rust-projection-v68-approved-candidate.json"),
     "utf8",
   ));
-  const approvedActivation = assertApprovedV67ActivationPreflight({
+  const approvedActivation = assertApprovedV68ActivationPreflight({
     approvedCandidate,
     versions: stateBefore.versions,
     stagedWasmFingerprint: fingerprintWasmArtifact(readFileSync(stagingPaths.wasm)),

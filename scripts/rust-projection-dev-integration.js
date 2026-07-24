@@ -13,7 +13,7 @@ export const TARGET = Object.freeze({
   candidateVersion: "cart-transform-poc-dev-68",
   rejectedCandidateVersion: "cart-transform-poc-dev-66",
   candidateMessage: "rust-hybrid-quantity-v2-candidate",
-  activationSealed: false,
+  activationSealed: true,
   registrationId: "gid://shopify/CartTransform/136675606",
   functionId: "019f5e8c-0374-7577-b756-66af47a751be",
   functionHandle: "master-kit-expand",
@@ -354,7 +354,7 @@ export function executeInactiveDeploymentBoundary({ deployInactive, readState })
   } catch (error) {
     deploymentError = error;
   }
-  const state = readState();
+  const state = readStateWithRetries(readState, "Post-deployment state read");
   if (deploymentError) {
     try {
       if (versionWithStatus(state.versions, TARGET.candidateVersion, "inactive")) {
@@ -381,7 +381,7 @@ export function executeActivationBoundary({
 }) {
   try {
     activateCandidate();
-    const state = readState();
+    const state = readStateWithRetries(readState, "Post-activation state read");
     assertActiveCandidateState(state);
     return { ...state, recoveryRequired: true };
   } catch (activationError) {

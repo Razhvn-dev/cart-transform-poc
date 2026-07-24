@@ -36,6 +36,7 @@ export function isTransientShopifyCliTransportError(error) {
     "eai_again",
     "fetch failed",
     "the user aborted a request",
+    "/admin/oauth/access_token failed",
   ].some((token) => message.includes(token));
 }
 

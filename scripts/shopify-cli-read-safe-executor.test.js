@@ -70,6 +70,26 @@ describe("Shopify CLI read-safe executor", () => {
     expect(execFileAsync).toHaveBeenCalledTimes(2);
   });
 
+  it("retries an OAuth token transport failure with an empty reason", async () => {
+    const oauthFailure = [
+      "request to https://huang-mvqquz1p.myshopify.com/admin/oauth/access_token",
+      "failed, reason:",
+    ].join(" ");
+    const execFileAsync = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error("CLI failed"), {
+        stderr: oauthFailure,
+      }))
+      .mockResolvedValueOnce({});
+    const backoff = vi.fn().mockResolvedValue(undefined);
+    const execute = createExecutor({ execFileAsync, wait: backoff });
+
+    await expect(execute("query Reconcile { shop { name } }")).resolves.toEqual({
+      data: { shop: { name: "ACES" } },
+    });
+    expect(execFileAsync).toHaveBeenCalledTimes(2);
+    expect(backoff).toHaveBeenCalledWith(250);
+  });
+
   it("reports the actual attempt count when a read fails with a deterministic error", async () => {
     const execFileAsync = vi.fn().mockRejectedValue(new Error("Access denied for publications field"));
     const execute = createExecutor({ execFileAsync });

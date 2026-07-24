@@ -55,7 +55,7 @@ describe("Rust hybrid development integration contract", () => {
       candidateVersion: "cart-transform-poc-dev-68",
       rejectedCandidateVersion: "cart-transform-poc-dev-66",
       candidateMessage: "rust-hybrid-quantity-v2-candidate",
-      activationSealed: false,
+      activationSealed: true,
       registrationId: "gid://shopify/CartTransform/136675606",
       functionId: "019f5e8c-0374-7577-b756-66af47a751be",
       functionHandle: "master-kit-expand",
@@ -208,8 +208,7 @@ describe("Rust hybrid development integration contract", () => {
   test("defaults to dry-run and enforces one explicit execution mode", () => {
     expect(executionMode([])).toBe("dry-run");
     expect(executionMode(["--deploy-inactive"])).toBe("deploy-inactive");
-    expect(() => executionMode(["--activate-candidate"]))
-      .toThrow(/v68 activation.*not sealed/i);
+    expect(executionMode(["--activate-candidate"])).toBe("activate-candidate");
     expect(executionMode(["--recover-v64"])).toBe("recover-v64");
     expect(() => executionMode(["--force"])).toThrow(/unknown argument/i);
     expect(() => executionMode([
@@ -407,6 +406,49 @@ describe("Rust hybrid development integration contract", () => {
     expect(readState).toHaveBeenCalledOnce();
   });
 
+  test("inactive deployment retries bounded post-write state reads", () => {
+    const deployInactive = vi.fn();
+    const readState = vi.fn()
+      .mockImplementationOnce(() => {
+        throw new Error("OAuth token transport failed");
+      })
+      .mockImplementationOnce(() => {
+        throw new Error("OAuth token transport failed again");
+      })
+      .mockReturnValue(stateWithVersions([
+        { versionTag: TARGET.baselineVersion, status: "active" },
+        { versionTag: TARGET.candidateVersion, status: "inactive" },
+      ]));
+
+    const result = executeInactiveDeploymentBoundary({
+      deployInactive,
+      readState,
+    });
+
+    expect(deployInactive).toHaveBeenCalledOnce();
+    expect(readState).toHaveBeenCalledTimes(3);
+    expect(result.versions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        versionTag: TARGET.candidateVersion,
+        status: "inactive",
+      }),
+    ]));
+  });
+
+  test("inactive deployment bounds failed post-write state reads without redeploying", () => {
+    const deployInactive = vi.fn();
+    const readState = vi.fn(() => {
+      throw new Error("OAuth token transport failed");
+    });
+
+    expect(() => executeInactiveDeploymentBoundary({
+      deployInactive,
+      readState,
+    })).toThrow(/Post-deployment state read failed after 3 attempts/i);
+    expect(deployInactive).toHaveBeenCalledOnce();
+    expect(readState).toHaveBeenCalledTimes(3);
+  });
+
   test("activation failure automatically attempts verified v64 recovery", () => {
     const activationError = new Error("release failed");
     const activateCandidate = vi.fn(() => {
@@ -501,6 +543,33 @@ describe("Rust hybrid development integration contract", () => {
       recoverBaseline,
     });
 
+    expect(recoverBaseline).not.toHaveBeenCalled();
+    expect(result.recoveryRequired).toBe(true);
+  });
+
+  test("successful activation retries post-release reads without unnecessary recovery", () => {
+    const activateCandidate = vi.fn();
+    const recoverBaseline = vi.fn();
+    const readState = vi.fn()
+      .mockImplementationOnce(() => {
+        throw new Error("OAuth token transport failed");
+      })
+      .mockImplementationOnce(() => {
+        throw new Error("OAuth token transport failed again");
+      })
+      .mockReturnValue(stateWithVersions([
+        { versionTag: TARGET.baselineVersion, status: "inactive" },
+        { versionTag: TARGET.candidateVersion, status: "active" },
+      ]));
+
+    const result = executeActivationBoundary({
+      activateCandidate,
+      readState,
+      recoverBaseline,
+    });
+
+    expect(activateCandidate).toHaveBeenCalledOnce();
+    expect(readState).toHaveBeenCalledTimes(3);
     expect(recoverBaseline).not.toHaveBeenCalled();
     expect(result.recoveryRequired).toBe(true);
   });

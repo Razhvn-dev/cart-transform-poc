@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "rust_projection_dev_approved_candidate.v1",
+  "versionTag": "cart-transform-poc-dev-68",
+  "versionId": "gid://shopify/Version/1062925795329",
+  "wasmSizeBytes": 113274,
+  "wasmSha256": "2ba39091bd4be734eb3faa0f739bf08c7cc29007cd2e21cf868187754e43b521"
+}

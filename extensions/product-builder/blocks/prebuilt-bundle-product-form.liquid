@@ -1,34 +1,55 @@
 {% doc %}
   Adds correlation-only Bundle Metadata V1 fields to the native product form for
-  a pre-built Bundle SKU. The block must bind one exact parent SKU because a
-  Shopify Product can contain both the bundle parent and ordinary component
-  Variants. Missing or ambiguous bindings fail closed.
+  a pre-built Bundle SKU. The block derives one exact parent Variant from the
+  product's trusted Projection. Missing, mismatched, or ambiguous bindings fail
+  closed.
 {% enddoc %}
 
-{% if product != blank and block.settings.parent_variant_sku != blank %}
-  {% assign approved_parent_variants = product.variants | where: 'sku', block.settings.parent_variant_sku %}
+{% if product != blank %}
+  {% assign prebuilt_projection = product.metafields.aces_dev.prebuilt_bundle_expand_projection_v1.value %}
+  {% assign projection_parent = prebuilt_projection.parent %}
+  {% assign projection_schema = prebuilt_projection.schema_version %}
   {% capture parent_product_gid %}gid://shopify/Product/{{ product.id }}{% endcapture %}
+  {% assign parent_product_gid = parent_product_gid | strip %}
+  {% assign supported_projection_schema = false %}
 
-  {% if approved_parent_variants.size == 1 %}
-    <div
-      data-prebuilt-bundle-product-form
-      data-parent-product-gid="{{ parent_product_gid | strip | escape }}"
-      data-parent-title="{{ product.title | escape }}"
-      data-quantity-error="{{ 'prebuilt_bundle.quantity_one_at_a_time' | t | escape }}"
-      hidden
-      {{ block.shopify_attributes }}
-    >
-      <script type="application/json" data-prebuilt-bundle-variant-map>
-        {
+  {% if projection_schema == 'prebuilt_bundle_expand_projection.v1' or projection_schema == 'prebuilt_bundle_expand_projection.v2' %}
+    {% assign supported_projection_schema = true %}
+  {% endif %}
+
+  {% if supported_projection_schema %}
+    {% if projection_parent.product_gid == parent_product_gid %}
+      {% if projection_parent.variant_gid != blank and projection_parent.sku != blank and projection_parent.title != blank %}
+        {% assign approved_parent_variants = product.variants | where: 'sku', projection_parent.sku %}
+
+        {% if approved_parent_variants.size == 1 %}
           {% assign approved_parent_variant = approved_parent_variants.first %}
-          "{{ approved_parent_variant.id }}": {
-            "variantGid": "gid://shopify/ProductVariant/{{ approved_parent_variant.id }}",
-            "sku": {{ approved_parent_variant.sku | json }}
-          }
-        }
-      </script>
-    </div>
-    <script src="{{ 'prebuilt-bundle-product-form.js' | asset_url }}" defer="defer"></script>
+          {% capture approved_parent_variant_gid %}gid://shopify/ProductVariant/{{ approved_parent_variant.id }}{% endcapture %}
+          {% assign approved_parent_variant_gid = approved_parent_variant_gid | strip %}
+
+          {% if approved_parent_variant_gid == projection_parent.variant_gid %}
+            <div
+              data-prebuilt-bundle-product-form
+              data-parent-product-gid="{{ parent_product_gid | escape }}"
+              data-parent-title="{{ projection_parent.title | escape }}"
+              data-quantity-error="{{ 'prebuilt_bundle.quantity_one_at_a_time' | t | escape }}"
+              hidden
+              {{ block.shopify_attributes }}
+            >
+              <script type="application/json" data-prebuilt-bundle-variant-map>
+                {
+                  "{{ approved_parent_variant.id }}": {
+                    "variantGid": {{ approved_parent_variant_gid | json }},
+                    "sku": {{ approved_parent_variant.sku | json }}
+                  }
+                }
+              </script>
+            </div>
+            <script src="{{ 'prebuilt-bundle-product-form.js' | asset_url }}" defer="defer"></script>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+    {% endif %}
   {% endif %}
 {% endif %}
 
@@ -36,13 +57,6 @@
 {
   "name": "Prebuilt bundle metadata",
   "target": "section",
-  "settings": [
-    {
-      "type": "text",
-      "id": "parent_variant_sku",
-      "label": "Bundle parent SKU",
-      "info": "Must match exactly one variant on this product."
-    }
-  ]
+  "settings": []
 }
 {% endschema %}

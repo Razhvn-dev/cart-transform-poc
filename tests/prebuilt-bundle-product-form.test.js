@@ -355,12 +355,17 @@ describe("pre-built Bundle normal-product cart metadata asset", () => {
     expect(assetSource).not.toMatch(/component_variant|fixed_selection|snapshot_checksum|runtime_snapshot|mapping_id|price_cents/i);
   });
 
-  it("requires one explicitly bound parent SKU, stays Shopify-schema-compatible, and is isolated from the Builder template", () => {
-    expect(blockSource).toContain("{% if product != blank and block.settings.parent_variant_sku != blank %}");
-    expect(blockSource).toContain('"name": "Prebuilt bundle metadata"');
-    expect(blockSource).toContain("block.settings.parent_variant_sku");
-    expect(blockSource).toContain("product.variants | where: 'sku', block.settings.parent_variant_sku");
+  it("derives one exact parent Variant from the product Projection and is isolated from the Builder template", () => {
+    expect(blockSource).toContain("product.metafields.aces_dev.prebuilt_bundle_expand_projection_v1.value");
+    expect(blockSource).toContain("prebuilt_bundle_expand_projection.v1");
+    expect(blockSource).toContain("prebuilt_bundle_expand_projection.v2");
+    expect(blockSource).toContain("projection_parent.product_gid == parent_product_gid");
+    expect(blockSource).toContain("product.variants | where: 'sku', projection_parent.sku");
     expect(blockSource).toContain("approved_parent_variants.size == 1");
+    expect(blockSource).toContain("approved_parent_variant_gid == projection_parent.variant_gid");
+    expect(blockSource).toContain('"name": "Prebuilt bundle metadata"');
+    expect(blockSource).not.toContain("parent_variant_sku");
+    expect(blockSource).not.toContain("Bundle parent SKU");
     expect(blockSource).not.toContain("for variant in product.variants");
     expect(blockSource).toContain("{{ 'prebuilt-bundle-product-form.js' | asset_url }}");
     expect(blockSource).toContain('<script src=');

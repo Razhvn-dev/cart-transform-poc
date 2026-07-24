@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { posix, resolve } from "node:path";
+import { posix, resolve, win32 } from "node:path";
 
 import { describe, expect, test, vi } from "vitest";
 
@@ -178,7 +178,7 @@ describe("Rust hybrid development integration contract", () => {
   });
 
   test("resolves every generated deployment file inside the ignored staging root", () => {
-    const paths = resolveStagingPaths("C:/repo");
+    const paths = resolveStagingPaths("C:/repo", win32);
     expect(paths.root).toBe("C:\\repo\\.local\\rust-projection-dev-integration");
     expect(paths.extensionDirectory).toBe(`${paths.root}\\extensions\\master-kit-expand`);
     expect(paths.manifest).toBe(`${paths.extensionDirectory}\\shopify.extension.toml`);
